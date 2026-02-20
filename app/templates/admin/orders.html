@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex justify-between items-center mb-6 px-2">
+    <h2 class="text-2xl font-black text-gray-800 uppercase tracking-tight">Заявки</h2>
+    <span class="bg-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg shadow-pink-100">
+        {{ orders|length }} всего
+    </span>
+</div>
+
+<div class="space-y-6 pb-10">
+    {% for o in orders %}
+    <div class="bg-white rounded-[2.5rem] border border-pink-50 shadow-sm overflow-hidden transition-all hover:shadow-md">
+        <div class="p-5 pb-3 flex justify-between items-start border-b border-gray-50">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-[10px] font-black bg-gray-100 text-gray-400 px-2 py-0.5 rounded-md uppercase">#{{ o.id }}</span>
+                    <span class="text-xs text-gray-400 font-medium italic">{{ o.created_at.strftime('%H:%M %d.%m') if o.created_at else '' }}</span>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800 leading-tight">{{ o.customer_name or "Анонимный клиент" }}</h3>
+                
+                {% if o.user %}
+                <a href="https://t.me/{{ o.user.username if o.user.username else o.user.tg_id }}" target="_blank" 
+                   class="inline-flex items-center gap-1 text-sky-500 text-xs font-bold hover:underline mt-1">
+                    <i class="fa-brands fa-telegram text-sm"></i>
+                    @{{ o.user.username if o.user.username else 'id' + o.user.tg_id|string }}
+                </a>
+                {% endif %}
+            </div>
+
+            <div class="text-right">
+                <span class="inline-block px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider
+                    {% if o.status == 'new' %}bg-blue-500 text-white shadow-lg shadow-blue-100
+                    {% elif o.status == 'in_work' %}bg-orange-400 text-white shadow-lg shadow-orange-100
+                    {% elif o.status == 'done' %}bg-green-500 text-white shadow-lg shadow-green-100
+                    {% else %}bg-gray-200 text-gray-500{% endif %}">
+                    {% if o.status == 'new' %}Новый{% elif o.status == 'in_work' %}В работе{% elif o.status == 'done' %}Готов{% else %}Отменен{% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div class="p-5 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-pink-50/50 p-3 rounded-2xl border border-pink-100/50">
+                    <p class="text-[9px] uppercase font-black text-pink-400 mb-1 leading-none">Телефон</p>
+                    <a href="tel:{{ o.phone }}" class="text-sm font-bold text-gray-700">{{ o.phone or "—" }}</a>
+                </div>
+                <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                    <p class="text-[9px] uppercase font-black text-gray-400 mb-1 leading-none">Оплата</p>
+                    <p class="text-sm font-bold text-gray-700">
+                        {% if o.payment_type == 'cash' %}💵 Наличные{% elif o.payment_type == 'card' %}💳 Картой{% else %}📲 Перевод{% endif %}
+                    </p>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <p class="text-[9px] uppercase font-black text-gray-400 mb-2 leading-none">Доставка</p>
+                <div class="flex items-start gap-2">
+                    <i class="fa-solid {% if o.delivery_type == 'delivery' %}fa-truck text-orange-400{% else %}fa-shop text-blue-400{% endif %} mt-1"></i>
+                    <div>
+                        <p class="text-sm font-bold text-gray-800">
+                            {{ "Курьером" if o.delivery_type == 'delivery' else "Самовывоз" }}
+                        </p>
+                        <p class="text-xs text-gray-500 leading-tight mt-0.5">{{ o.address or "Адрес не указан" }}</p>
+                    </div>
+                </div>
+            </div>
+
+            {% if o.comment %}
+            <div class="bg-yellow-50/50 p-3 rounded-2xl border border-yellow-100">
+                <p class="text-[9px] uppercase font-black text-yellow-600 mb-1 leading-none italic">Комментарий клиента:</p>
+                <p class="text-xs text-gray-600 italic leading-relaxed">"{{ o.comment }}"</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="p-5 pt-0 flex flex-wrap gap-2">
+            {% if o.status == 'new' %}
+            <form action="/orders/status" method="post" class="flex-grow">
+                <input type="hidden" name="order_id" value="{{ o.id }}">
+                <input type="hidden" name="status_val" value="in_work">
+                <button class="w-full bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-orange-100 transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-play text-xs"></i> Взять в работу
+                </button>
+            </form>
+            {% elif o.status == 'in_work' %}
+            <form action="/orders/status" method="post" class="flex-grow">
+                <input type="hidden" name="order_id" value="{{ o.id }}">
+                <input type="hidden" name="status_val" value="done">
+                <button class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-2xl shadow-lg shadow-green-100 transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-check"></i> Завершить
+                </button>
+            </form>
+            {% endif %}
+
+            <form action="/orders/delete/{{ o.id }}" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить эту заявку?')" class="w-full">
+                <button class="w-full bg-red-50 text-red-400 font-bold py-3 rounded-2xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-trash-can text-xs"></i> Удалить
+                </button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-pink-100">
+        <div class="text-5xl mb-4">📭</div>
+        <p class="text-gray-400 font-bold uppercase tracking-widest text-sm">Заявок пока нет</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+{% if request.query_params.get('sent') %}
+<div class="bg-green-50 border border-green-200 text-green-600 p-4 rounded-2xl mb-4 text-sm font-bold flex justify-between">
+    <span>✅ Рассылка завершена!</span>
+    <span>Получили: {{ request.query_params.get('sent') }} | Ошибки: {{ request.query_params.get('errors') }}</span>
+</div>
+{% endif %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center px-2">
+        <h2 class="text-xl font-bold text-gray-800 font-serif">Статистика магазина</h2>
+        <button onclick="toggleBotTexts()" class="md:hidden bg-pink-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-pink-200 active:scale-95 transition-transform">
+            ✏️ Тексты бота
+        </button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+        <div class="bg-blue-500 p-4 rounded-3xl shadow-lg shadow-blue-100 text-white">
+            <p class="text-xs opacity-80">Новые заявки</p>
+            <p class="text-3xl font-black">{{ stats.new }}</p>
+        </div>
+        <div class="bg-orange-400 p-4 rounded-3xl shadow-lg shadow-orange-100 text-white">
+            <p class="text-xs opacity-80">В работе</p>
+            <p class="text-3xl font-black">{{ stats.in_work }}</p>
+        </div>
+        <div class="bg-green-500 p-4 rounded-3xl shadow-lg shadow-green-100 text-white">
+            <p class="text-xs opacity-80">Выполнено</p>
+            <p class="text-3xl font-black">{{ stats.done }}</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded-3xl shadow-lg shadow-gray-200 text-white">
+            <p class="text-xs opacity-80">Всего заказов</p>
+            <p class="text-3xl font-black">{{ stats.total_orders }}</p>
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+        <div class="md:col-span-2 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white p-4 rounded-2xl border border-pink-50 flex items-center justify-between">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase font-bold">Товаров</p>
+                        <p class="text-xl font-bold text-pink-500">{{ stats.products }}</p>
+                    </div>
+                    <i class="fa-solid fa-boxes-stacked text-pink-100 text-2xl"></i>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-pink-50 flex items-center justify-between">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase font-bold">Юзеров</p>
+                        <p class="text-xl font-bold text-pink-500">{{ stats.users }}</p>
+                    </div>
+                    <i class="fa-solid fa-user-group text-pink-100 text-2xl"></i>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-[2.5rem] border border-pink-100 shadow-sm mt-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center text-purple-500">
+                        <i class="fa-solid fa-bullhorn"></i>
+                    </div>
+                    <h3 class="font-bold text-gray-800">Массовая рассылка</h3>
+                </div>
+                
+                <form action="/broadcast" method="post" onsubmit="return confirm('Отправить это сообщение ВСЕМ пользователям?')">
+                    <textarea name="message" placeholder="Введите текст рассылки..." required 
+                        class="w-full border-pink-100 border p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-200 transition mb-3" rows="3"></textarea>
+                    
+                    <button type="submit" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 rounded-2xl shadow-lg shadow-purple-100 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-paper-plane text-xs"></i>
+                        <span>Запустить рассылку</span>
+                    </button>
+                </form>
+                <p class="text-[10px] text-gray-400 mt-2 px-2">⚠️ Сообщение будет отправлено всем пользователям, которые хоть раз запускали бота.</p>
+            </div>
+            <div class="pt-2 space-y-3">
+                <h3 class="font-bold text-gray-700 px-2">Управление</h3>
+                <div class="grid grid-cols-1 gap-2">
+                    <a href="/orders" class="flex items-center gap-4 bg-white p-4 rounded-2xl border border-pink-100 shadow-sm transition-all hover:border-pink-300">
+                        <div class="w-10 h-10 bg-pink-50 rounded-full flex items-center justify-center text-pink-500">
+                            <i class="fa-solid fa-clipboard-list"></i>
+                        </div>
+                        <span class="font-medium text-gray-700">Открыть список заявок</span>
+                        <i class="fa-solid fa-chevron-right ml-auto text-gray-300 text-xs"></i>
+                    </a>
+                    <a href="/catalog" class="flex items-center gap-4 bg-white p-4 rounded-2xl border border-pink-100 shadow-sm transition-all hover:border-pink-300">
+                        <div class="w-10 h-10 bg-pink-50 rounded-full flex items-center justify-center text-pink-500">
+                            <i class="fa-solid fa-plus"></i>
+                        </div>
+                        <span class="font-medium text-gray-700">Перейти в каталог</span>
+                        <i class="fa-solid fa-chevron-right ml-auto text-gray-300 text-xs"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="hidden md:block bg-white p-6 rounded-3xl border border-pink-100 shadow-sm">
+            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-pink-500"></i> Тексты бота
+            </h3>
+            <form action="/bot-texts/save" method="post" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Главное меню (/start)</label>
+                    <textarea name="start_message" rows="4" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none transition-all">{{ (bot_texts|default({})).get('start_message', 'Добро пожаловать!') }}</textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Текст поддержки</label>
+                    <textarea name="support_message" rows="4" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none transition-all">{{ (bot_texts|default({})).get('support_message', 'Свяжитесь с нами: @admin') }}</textarea>
+                </div>
+                <button type="submit" class="w-full bg-pink-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-pink-100 hover:bg-pink-600 transition-colors active:scale-95">
+                    💾 Сохранить
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="md:hidden fixed inset-0 z-[100] drawer-overlay bg-black/40" onclick="toggleBotTexts()"></div>
+<div class="md:hidden fixed bottom-0 left-0 right-0 z-[101] bg-white rounded-t-[32px] p-6 drawer-transform shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+    <div class="w-12 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
+    <h3 class="font-bold text-gray-800 text-lg mb-4">Редактировать тексты</h3>
+    <form action="/bot-texts/save" method="post" class="space-y-4">
+        <div>
+            <label class="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Главное меню</label>
+            <textarea name="start_message" rows="3" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none">{{ (bot_texts|default({})).get('start_message', '') }}</textarea>
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-gray-400 uppercase mb-1 ml-1">Поддержка</label>
+            <textarea name="support_message" rows="3" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none">{{ (bot_texts|default({})).get('support_message', '') }}</textarea>
+        </div>
+        <button type="submit" class="w-full bg-pink-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-pink-100 active:scale-95">
+            💾 Сохранить изменения
+        </button>
+        <button type="button" onclick="toggleBotTexts()" class="w-full text-gray-400 text-sm font-medium py-2">
+            Отмена
+        </button>
+    </form>
+</div>
+{% endblock %}

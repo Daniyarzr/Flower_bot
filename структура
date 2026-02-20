@@ -1,0 +1,23 @@
+flower_bot/
+├── .env                 # Токен бота, ссылка на БД, пароли
+├── main.py              # Файл запуска Telegram бота
+├── web_admin.py         # Файл запуска Веб-админки (FastAPI)
+├── requirements.txt     # Список библиотек (aiogram, fastapi, sqlalchemy и т.д.)
+├── app/
+│   ├── __init__.py
+│   ├── config.py        # Загрузка настроек из .env
+│   ├── db.py            # Подключение к БД и работа с сессиями
+│   ├── models.py        # Описание таблиц (User, Product, Request)
+│   ├── states.py        # Состояния FSM для бота
+│   ├── keyboards.py     # Все кнопки бота
+│   ├── handlers/        # Логика бота
+│   │   ├── __init__.py
+│   │   ├── user.py      # Хендлеры для клиентов
+│   │   └── admin.py     # Простая админка в ТГ (уведомления)
+│   └── templates/       # HTML-файлы для сайта (FastAPI)
+│       └── admin/
+│           ├── base.html       # Общий дизайн (шапка, розовый стиль)
+│           ├── login.html      # Страница входа
+│           ├── dashboard.html  # Список товаров и статистика
+│           ├── orders.html     # Управление заказами
+│           └── users.html      # Управление ролями юзеров

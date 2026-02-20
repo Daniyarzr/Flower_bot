@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flower Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #FFF5F7; font-family: 'Inter', sans-serif; }
+        .pink-gradient { background: linear-gradient(135deg, #FF9A9E 0%, #FAD0C4 100%); }
+        
+        /* Drawer animation */
+        .drawer-transform {
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+        }
+        .drawer-open .drawer-transform {
+            transform: translateY(0);
+        }
+        .drawer-overlay {
+            opacity: 0;
+            transition: opacity 0.3s ease-out;
+            pointer-events: none;
+        }
+        .drawer-open .drawer-overlay {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="pb-20"> 
+    <header class="bg-white shadow-sm p-4 sticky top-0 z-50 flex justify-between items-center border-b border-pink-100">
+        <h1 class="text-xl font-bold text-pink-500">🌸 Flower Admin</h1>
+        <a href="/logout" class="text-gray-400 text-sm"><i class="fa-solid fa-right-from-bracket"></i></a>
+    </header>
+
+    <main class="p-4 max-w-4xl mx-auto">
+        {% block content %}{% endblock %}
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-pink-100 flex justify-around p-3 shadow-lg z-50">
+        <a href="/dashboard" class="flex flex-col items-center text-pink-500">
+            <i class="fa-solid fa-chart-line text-xl"></i>
+            <span class="text-[10px]">Главная</span>
+        </a>
+        <a href="/catalog" class="flex flex-col items-center text-gray-400 hover:text-pink-400">
+            <i class="fa-solid fa-leaf text-xl"></i>
+            <span class="text-[10px]">Каталог</span>
+        </a>
+        <a href="/orders" class="flex flex-col items-center text-gray-400 hover:text-pink-400">
+            <i class="fa-solid fa-shopping-bag text-xl"></i>
+            <span class="text-[10px]">Заявки</span>
+        </a>
+        <a href="/users" class="flex flex-col items-center text-gray-400 hover:text-pink-400">
+            <i class="fa-solid fa-users text-xl"></i>
+            <span class="text-[10px]">Юзеры</span>
+        </a>
+    </nav>
+
+    <div id="page-loader" class="hidden fixed inset-0 bg-white/60 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="flex flex-col items-center">
+            <div class="w-12 h-12 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+            <p class="mt-4 text-pink-600 font-bold animate-pulse text-sm uppercase tracking-widest">Загрузка...</p>
+        </div>
+    </div>
+
+    <script>
+        function toggleBotTexts() {
+            document.body.classList.toggle('drawer-open');
+        }
+
+        document.querySelectorAll('nav a, .btn-load').forEach(link => {
+            link.addEventListener('click', function(e) {
+                if (this.hostname === window.location.hostname && !this.hasAttribute('download')) {
+                    document.getElementById('page-loader').classList.remove('hidden');
+                }
+            });
+        });
+
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function() {
+                document.getElementById('page-loader').classList.remove('hidden');
+            });
+        });
+    </script>
+</body>
+</html>
