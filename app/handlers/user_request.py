@@ -10,11 +10,21 @@ from app.keyboards import kb_my_request_view
 router = Router()
 
 
-def delivery_type_human(value: DeliveryType | None) -> str:
-    return {
-        DeliveryType.DELIVERY: "🚚 Доставка",
-        DeliveryType.PICKUP: "🏃 Самовывоз",
-    }.get(value, "—")
+def delivery_human(delivery_type: str | None) -> str:
+    mapping = {
+        "pickup": "🏃 Самовывоз",
+        "delivery": "🚚 Доставка",
+    }
+    return mapping.get(delivery_type, "—")
+
+
+def payment_human(payment_type: str | None) -> str:
+    mapping = {
+        "cash": "💵 Наличные",
+        "transfer": "💸 Перевод",
+        "card": "💳 Карта",
+    }
+    return mapping.get(payment_type, "—")
 
 
 @router.callback_query(F.data.startswith("my:req:view:"))
@@ -43,12 +53,10 @@ async def my_request_view(c: CallbackQuery):
         f"📄 <b>Заявка №{req.id}</b>\n\n"
         f"💐 Товар: {product_title}\n"
         f"💰 Цена: {price} ₽\n"
+        f"📅 Дата: {req.need_datetime.strftime('%d.%m.%Y') if req.need_datetime else '—'}\n"
         f"📞 Телефон: <code>{req.phone}</code>\n"
         f"🚚 Способ получения: {delivery_human(req.delivery_type)}\n"
-        f"📍 Адрес: {req.address}\n"
-        f"\n📌 Статус: <b>{req.status.value}</b>"
     )
-
 
     if req.address:
         text += f"📍 Адрес: {req.address}\n"
@@ -66,9 +74,3 @@ async def my_request_view(c: CallbackQuery):
         )
     )
     await c.answer()
-
-def delivery_human(delivery_type: str) -> str:
-    return {
-        "pickup": "🏃 Самовывоз",
-        "delivery": "🚚 Доставка курьером",
-    }.get(delivery_type, "—")

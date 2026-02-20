@@ -83,28 +83,34 @@ async def admin_requests_list(c: CallbackQuery):
     async with get_sessionmaker()() as session:
         res = await session.execute(
             select(Request)
+            .options(selectinload(Request.user), selectinload(Request.product))
             .where(Request.status == status)
             .order_by(Request.created_at.desc())
+            .limit(20)
         )
         requests = res.scalars().all()
     
     if not requests:
-        return await c.answer("😔 Нет заявок", show_alert=True)
+        await c.message.edit_text(
+            f"📭 Нет заявок со статусом {status.value.upper()}",
+            reply_markup=kb_admin_panel()
+        )
+        await c.answer()
+        return
+    
+    items = []
+    for r in requests:
+        label = f"#{r.id} · {r.customer_name or 'Аноним'} · {r.product.price if r.product else 0} ₽"
+        items.append((r.id, label))
     
     builder = InlineKeyboardBuilder()
-    for req in requests:
-        dt = req.created_at.strftime("%d.%m.%y %H:%M")
-        label = f"№{req.id} от {dt}"
-        builder.button(
-            text=label,
-            callback_data=f"admin:req:view:{req.id}"
-        )
-    
-    builder.button(text="⬅ В панель", callback_data="admin:panel")
+    for req_id, label in items:
+        builder.button(text=label, callback_data=f"admin:req:view:{req_id}")
+    builder.button(text="⬅ Назад", callback_data="admin:panel")
     builder.adjust(1)
     
     await c.message.edit_text(
-        f"📋 Заявки: {status.value.upper()}",
+        f"📦 Заявки ({status.value.upper()}):",
         reply_markup=builder.as_markup()
     )
     await c.answer()
@@ -137,6 +143,7 @@ async def admin_request_view(c: CallbackQuery):
         f"📄 <b>Заявка №{req.id}</b>\n\n"
         f"👤 Имя: {req.customer_name or '—'}\n"
         f"📞 Телефон: <code>{req.phone or '—'}</code>\n"
+        f"📅 Дата: {req.need_datetime.strftime('%d.%m.%Y') if req.need_datetime else '—'}\n"
         f"💐 Товар: {req.product.title if req.product else '—'}\n"
         f"💰 Сумма: <b>{price} ₽</b>\n"
         f"🚚 Получение: {delivery_human(req.delivery_type)}\n"

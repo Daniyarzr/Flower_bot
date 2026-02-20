@@ -74,24 +74,32 @@ def kb_product_nav(category: str, price_data: str, index: int, total: int, produ
 def kb_delivery_type() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🚚 Доставка", callback_data="req:delivery:delivery"),
-        InlineKeyboardButton(text="🏃 Заберу сам", callback_data="req:delivery:pickup")
+        InlineKeyboardButton(text="🚚 Доставка", callback_data="req:delivery_type:delivery"),
+        InlineKeyboardButton(text="🏃 Самовывоз", callback_data="req:delivery_type:pickup"),
     )
-    builder.button(text="❌ Отменить", callback_data="req:cancel")
+    builder.button(text="❌ Отмена", callback_data="req:cancel")
     return builder.as_markup()
 
 
-def kb_payment_type(is_pickup: bool = False) -> InlineKeyboardMarkup:
+def kb_payment_type(delivery_type: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="💵 Наличные", callback_data="req:pay:cash"),
-        InlineKeyboardButton(text="💸 Перевод", callback_data="req:pay:transfer")
-    )
-    if is_pickup:
-        builder.button(text="💳 Карта (терминал)", callback_data="req:pay:card")
     
-    builder.button(text="❌ Отменить", callback_data="req:cancel")
-    builder.adjust(2, 1, 1)
+    if delivery_type == "delivery":
+        # Только перевод и карта для доставки (убрали наличные)
+        builder.row(
+            InlineKeyboardButton(text="💸 Перевод", callback_data="req:payment_type:transfer"),
+            InlineKeyboardButton(text="💳 Карта", callback_data="req:payment_type:card"),
+        )
+    else:
+        # Для самовывоза все опции
+        builder.row(
+            InlineKeyboardButton(text="💵 Наличные", callback_data="req:payment_type:cash"),
+            InlineKeyboardButton(text="💸 Перевод", callback_data="req:payment_type:transfer"),
+        )
+        builder.button(text="💳 Карта", callback_data="req:payment_type:card")
+    
+    builder.button(text="⬅ Назад", callback_data="req:back:payment")
+    builder.button(text="❌ Отмена", callback_data="req:cancel")
     return builder.as_markup()
 
 
@@ -99,8 +107,9 @@ def kb_confirm() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="✅ Подтвердить", callback_data="req:confirm:yes"),
-        InlineKeyboardButton(text="❌ Отменить", callback_data="req:cancel")
+        InlineKeyboardButton(text="✏ Изменить", callback_data="req:back:confirm"),
     )
+    builder.button(text="❌ Отмена", callback_data="req:cancel")
     return builder.as_markup()
 
 

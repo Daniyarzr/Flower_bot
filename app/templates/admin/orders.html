@@ -42,27 +42,36 @@
             <div class="grid grid-cols-2 gap-3">
                 <div class="bg-pink-50/50 p-3 rounded-2xl border border-pink-100/50">
                     <p class="text-[9px] uppercase font-black text-pink-400 mb-1 leading-none">Телефон</p>
-                    <a href="tel:{{ o.phone }}" class="text-sm font-bold text-gray-700">{{ o.phone or "—" }}</a>
+                    <p class="text-sm font-bold text-gray-800">{{ o.phone or "Не указан" }}</p>
                 </div>
-                <div class="bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                    <p class="text-[9px] uppercase font-black text-gray-400 mb-1 leading-none">Оплата</p>
-                    <p class="text-sm font-bold text-gray-700">
-                        {% if o.payment_type == 'cash' %}💵 Наличные{% elif o.payment_type == 'card' %}💳 Картой{% else %}📲 Перевод{% endif %}
-                    </p>
+                <div class="bg-purple-50/50 p-3 rounded-2xl border border-purple-100/50">
+                    <p class="text-[9px] uppercase font-black text-purple-400 mb-1 leading-none">Сумма</p>
+                    <p class="text-sm font-black text-purple-600">{{ o.product.price if o.product else 0 }} ₽</p>
                 </div>
             </div>
 
-            <div class="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                <p class="text-[9px] uppercase font-black text-gray-400 mb-2 leading-none">Доставка</p>
-                <div class="flex items-start gap-2">
-                    <i class="fa-solid {% if o.delivery_type == 'delivery' %}fa-truck text-orange-400{% else %}fa-shop text-blue-400{% endif %} mt-1"></i>
-                    <div>
-                        <p class="text-sm font-bold text-gray-800">
-                            {{ "Курьером" if o.delivery_type == 'delivery' else "Самовывоз" }}
-                        </p>
-                        <p class="text-xs text-gray-500 leading-tight mt-0.5">{{ o.address or "Адрес не указан" }}</p>
-                    </div>
+            <div class="bg-blue-50/50 p-3 rounded-2xl border border-blue-100/50">
+                <p class="text-[9px] uppercase font-black text-blue-400 mb-1 leading-none">Товар</p>
+                <p class="text-sm font-bold text-gray-800 leading-tight">{{ o.product.title if o.product else "Удалён" }}</p>
+                <p class="text-xs text-gray-500 italic mt-0.5">{{ o.product.description if o.product else "" }}</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-orange-50/50 p-3 rounded-2xl border border-orange-100/50">
+                    <p class="text-[9px] uppercase font-black text-orange-400 mb-1 leading-none">Оплата</p>
+                    <p class="text-sm font-bold text-gray-800">{{ {"cash": "Наличные", "transfer": "Перевод", "card": "Карта"}.get(o.payment_type, "Не указан") }}</p>
                 </div>
+                <div class="bg-green-50/50 p-3 rounded-2xl border border-green-100/50">
+                    <p class="text-[9px] uppercase font-black text-green-400 mb-1 leading-none">Получение</p>
+                    <p class="text-sm font-bold text-gray-800">{{ {"pickup": "Самовывоз", "delivery": "Доставка"}.get(o.delivery_type, "Не указан") }}</p>
+                    <p class="text-xs text-gray-500 leading-tight mt-0.5">{{ o.address or "Адрес не указан" }}</p>
+                </div>
+            </div>
+
+            <!-- Добавлено отображение даты, на которую нужен букет -->
+            <div class="bg-yellow-50/50 p-3 rounded-2xl border border-yellow-100">
+                <p class="text-[9px] uppercase font-black text-yellow-600 mb-1 leading-none">Дата доставки</p>
+                <p class="text-xs text-gray-600 leading-relaxed">{{ o.need_datetime.strftime('%d.%m.%Y') if o.need_datetime else "Не указана" }}</p>
             </div>
 
             {% if o.comment %}

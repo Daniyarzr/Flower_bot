@@ -15,7 +15,7 @@ from app.models import User, Product, Request as Order, UserRole, CategoryEnum, 
 from app.config import load_config
 from aiogram import Bot
 
-app = FastAPI(title="Flower Shop Admin")
+app = FastAPI(title="BLOOM lavka Admin")
 config = load_config()
 init_engine(config.db_url)
 
@@ -79,126 +79,122 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_db)):
         "users": await session.scalar(select(func.count(User.id))) or 0,
     }
 
-    # Загрузка текстов бота для редактирования
-    result = await session.execute(select(BotText))
-    db_texts = result.scalars().all()
-    bot_texts = {bt.key: bt.value for bt in db_texts}
-    
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, 
-        "stats": stats,
-        "bot_texts": bot_texts  # Передаем словарь в шаблон
-    })
+    bot_texts = await session.execute(select(BotText))
+    bot_texts_dict = {bt.key: bt.value for bt in bot_texts.scalars().all()}
 
-@app.post("/bot-texts/save")
-async def save_bot_texts(
-    request: Request,
-    start_message: str = Form(...),
-    support_message: str = Form(...),
-    session: AsyncSession = Depends(get_db)
-):
-    if not request.session.get("is_logged_in"): 
-        raise HTTPException(status_code=403)
-
-    updates = {
-        "start_message": start_message,
-        "support_message": support_message
-    }
-
-    for key, value in updates.items():
-        # Используем session.get для поиска по первичному ключу (key)
-        obj = await session.get(BotText, key)
-        if obj:
-            obj.value = value
-        else:
-            session.add(BotText(key=key, value=value))
-    
-    await session.commit()
-    return RedirectResponse("/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse(
+        "dashboard.html", 
+        {"request": request, "stats": stats, "bot_texts": bot_texts_dict}
+    )
 
 # --- КАТАЛОГ ---
 
 @app.get("/catalog", response_class=HTMLResponse)
-async def catalog_page(request: Request, session: AsyncSession = Depends(get_db)):
+async def catalog(request: Request, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     products = (await session.execute(select(Product).order_by(Product.id.desc()))).scalars().all()
-    return templates.TemplateResponse("catalog.html", {
-        "request": request, 
-        "products": products, 
-        "CategoryEnum": CategoryEnum
-    })
+    return templates.TemplateResponse("catalog.html", {"request": request, "products": products})
 
 @app.post("/catalog/add")
 async def add_product(
-    request: Request,
+    request: Request, 
     title: str = Form(...), 
     price: int = Form(...), 
+    description: str = Form(None),
     category: str = Form(...),
-    description: str = Form(None), 
-    file: UploadFile = File(None),   # ← меняем image на file
+    file: UploadFile = File(None),
     session: AsyncSession = Depends(get_db)
 ):
-    if not request.session.get("is_logged_in"):
-        return RedirectResponse("/")
-
+    if not request.session.get("is_logged_in"): return RedirectResponse("/")
+    
     image_url = None
-
-    if file and file.filename:
-        ext = file.filename.split(".")[-1]
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        filepath = f"static/uploads/{filename}"
-
+    if file:
+        filename = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
+        filepath = os.path.join("static/uploads", filename)
         async with aiofiles.open(filepath, "wb") as f:
             await f.write(await file.read())
-
-        image_url = f"/{filepath}"
-
-    new_prod = Product(
+        image_url = f"/static/uploads/{filename}"
+    
+    product = Product(
         title=title,
         price=price,
+        description=description,
         category=CategoryEnum(category),
-        image_url=image_url,
-        description=description
+        image_url=image_url
     )
-
-    session.add(new_prod)
+    session.add(product)
     await session.commit()
-
     return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
+# Новый роут: GET для формы редактирования
+@app.get("/catalog/edit/{product_id}", response_class=HTMLResponse)
+async def edit_product_form(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
+    if not request.session.get("is_logged_in"): return RedirectResponse("/")
+    
+    product = await session.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return templates.TemplateResponse("edit_product.html", {"request": request, "product": product})
 
-@app.post("/catalog/delete/{p_id}")
-async def delete_product(
-    request: Request,
-    p_id: int,
+# Новый роут: POST для сохранения изменений
+@app.post("/catalog/edit/{product_id}")
+async def edit_product(
+    request: Request, 
+    product_id: int,
+    title: str = Form(...), 
+    price: int = Form(...), 
+    description: str = Form(None),
+    category: str = Form(...),
+    file: UploadFile = File(None),
     session: AsyncSession = Depends(get_db)
 ):
-    if not request.session.get("is_logged_in"):
-        return RedirectResponse("/")
-
-    # 1. Получаем товар
-    product = await session.get(Product, p_id)
-
-    if product:
-        # 2. Удаляем файл если есть
-        if product.image_url:
-            file_path = product.image_url.lstrip("/")  # убираем /
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-        # 3. Удаляем товар
-        await session.delete(product)
-        await session.commit()
-
+    if not request.session.get("is_logged_in"): return RedirectResponse("/")
+    
+    product = await session.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    product.title = title
+    product.price = price
+    product.description = description
+    product.category = CategoryEnum(category)
+    
+    if file:
+        # Удаляем старую фото, если была
+        if product.image_url and os.path.exists(product.image_url.lstrip('/')):
+            os.remove(product.image_url.lstrip('/'))
+        
+        filename = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
+        filepath = os.path.join("static/uploads", filename)
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(await file.read())
+        product.image_url = f"/static/uploads/{filename}"
+    
+    await session.commit()
     return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
-# --- ЗАЯВКИ (ЗАКАЗЫ) ---
+@app.post("/catalog/delete/{product_id}")
+async def delete_product(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
+    if not request.session.get("is_logged_in"): return RedirectResponse("/")
+    
+    product = await session.get(Product, product_id)
+    if product and product.image_url and os.path.exists(product.image_url.lstrip('/')):
+        os.remove(product.image_url.lstrip('/'))
+    
+    await session.execute(delete(Product).where(Product.id == product_id))
+    await session.commit()
+    return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
+
+# --- ЗАЯВКИ ---
 
 @app.get("/orders", response_class=HTMLResponse)
 async def orders_page(request: Request, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     result = await session.execute(
-        select(Order).options(joinedload(Order.user)).order_by(Order.id.desc()).limit(50)
+        select(Order)
+        .options(joinedload(Order.user))
+        .order_by(Order.id.desc()).limit(50)
     )
     orders = result.scalars().all()
     return templates.TemplateResponse("orders.html", {"request": request, "orders": orders})

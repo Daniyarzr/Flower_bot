@@ -35,7 +35,7 @@ def load_config() -> Config:
         )
 
     # Эти поля необязательны, но сильно улучшают UX.
-    shop_name = os.getenv("SHOP_NAME", "BLOOM lavka").strip() or "Цветочная лавка"
+    shop_name = os.getenv("SHOP_NAME", "BLOOM lavka").strip() or "BLOOM lavka"
     support_contact = os.getenv("SUPPORT_CONTACT", "@tizhel").strip() or "@tizhel"
     shop_address = os.getenv("SHOP_ADDRESS", "").strip()
     work_hours = os.getenv("WORK_HOURS", "").strip()

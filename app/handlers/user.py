@@ -81,9 +81,8 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
             else:
                 logger.debug(f"Cache invalidated for key: {key} due to count mismatch (cached: {len(cached[0])}, current: {current_count})")
 
-    # Cache miss or invalid: refresh from DB
-    Session = get_sessionmaker()
-    async with Session() as session:
+    # Fetch fresh data
+    async with get_sessionmaker()() as session:
         result = await session.execute(
             select(Product)
             .where(
@@ -92,380 +91,176 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
                 Product.price >= min_p,
                 Product.price <= max_p,
             )
-            .order_by(Product.price)
+            .order_by(Product.id.desc())
         )
         products = result.scalars().all()
 
     _CATALOG_CACHE[key] = (products, now)
-    logger.debug(f"Cache updated for key: {key}, products count: {len(products)}")
+    logger.debug(f"Cache updated for key: {key}")
     return products
 
 
 # ==========================
-# Helper Functions
+# Human-readable helpers
 # ==========================
-async def get_bot_text(key: str, default: str) -> str:
-    """
-    Retrieve customizable bot text from database or fallback to default.
 
-    :param key: Text key (e.g., 'start_message')
-    :param default: Default text if not found in DB
-    :return: Text value
-    """
-    async with get_sessionmaker()() as session:
-        result = await session.execute(select(BotText).where(BotText.key == key))
-        bot_text_obj = result.scalar_one_or_none()
-        return bot_text_obj.value if bot_text_obj else default
-
-
-def delivery_human(delivery_type: Optional[str]) -> str:
-    """Human-readable delivery type."""
+def delivery_human(delivery_type: str | None) -> str:
     mapping = {
         "pickup": "🏃 Самовывоз",
-        "delivery": "🚚 Доставка курьером",
+        "delivery": "🚚 Доставка",
     }
     return mapping.get(delivery_type, "—")
 
 
-def payment_human(payment_type: Optional[str]) -> str:
-    """Human-readable payment type."""
+def payment_human(payment_type: str | None) -> str:
     mapping = {
         "cash": "💵 Наличные",
         "transfer": "💸 Перевод",
-        "card": "💳 Карта (терминал)",
+        "card": "💳 Карта",
     }
     return mapping.get(payment_type, "—")
 
 
-def request_label(req: Request) -> str:
-    """Generate human-readable label for a request."""
-    dt = req.created_at.strftime("%d.%m.%y %H:%M")
-    status = req.status.value.upper()
-    return f"№{req.id} от {dt} ({status})"
-
-
 # ==========================
-# Handlers
+# Back to start
 # ==========================
-@router.message(F.text.in_({"/start", "🏠 Главное меню"}))
-async def start_handler(m: Message, config: Config):
-    """
-    Handle /start command or 'Main Menu' button.
-    Registers/updates user and shows welcome message with menu.
-    """
-    async with get_sessionmaker()() as session:
-        await upsert_user(
-            session=session,
-            tg_id=m.from_user.id,
-            username=m.from_user.username,
-            first_name=m.from_user.first_name,
-            admin_ids=config.admin_ids,
-        )
-
-    welcome_text = await get_bot_text("start_message", "🌸 Добро пожаловать в Bloom Lavka!")
-    is_admin = await is_admin_cached(m.from_user.id)
-
-    await m.answer(welcome_text, reply_markup=kb_start(is_admin))
-
-    # Add persistent bottom menu button
-    await m.answer(
-        "Чтобы вернуться в главное меню нажмите '🏠 Главное меню' ⬇️",
-        reply_markup=kb_main_menu_bottom(),
-    )
-
-
-@router.callback_query(F.data == "support")
-async def support_handler(c: CallbackQuery):
-    """
-    Handle support callback.
-    Displays support message and returns to main menu.
-    """
-    is_admin = await is_admin_cached(c.from_user.id)
-    support_text = await get_bot_text(
-        "support_message", "❓ Возникли вопросы? Напишите нашему менеджеру."
-    )
-    await c.message.edit_text(support_text, reply_markup=kb_start(is_admin))
-    await c.answer()
-
 
 @router.callback_query(F.data == "back:start")
 async def back_to_start(c: CallbackQuery):
-    """
-    Handle back to start callback.
-    Returns to main menu, handling potential message edit failures.
-    """
     is_admin = await is_admin_cached(c.from_user.id)
-    text = "🏠 Главное меню"
-    markup = kb_start(is_admin=is_admin)
-
-    try:
-        await c.message.edit_text(text, reply_markup=markup)
-    except Exception:
-        try:
-            await c.message.delete()
-        except Exception:
-            pass
-        await c.message.answer(text, reply_markup=markup)
-
+    await c.message.edit_text("Добро пожаловать в BLOOM lavka!", reply_markup=kb_start(is_admin))
     await c.answer()
 
 
+# ==========================
+# Catalog
+# ==========================
+
 @router.callback_query(F.data.startswith("cat:"))
-async def category_select(c: CallbackQuery):
-    """
-    Handle category selection callback.
-    Shows price filters for selected category.
-    """
-    cat = c.data.split(":")[1]
-    text = "💰 Выберите бюджет:"
-    markup = kb_price_filters(cat)
-
-    try:
-        await c.message.edit_text(text, reply_markup=markup)
-    except TelegramBadRequest as e:
-        if "there is no text" in str(e).lower():
-            await c.message.delete()
-            await c.message.answer(text, reply_markup=markup)
-        else:
-            raise
-
+async def show_category(c: CallbackQuery):
+    category = c.data.split(":")[1]
+    text = "💐 Выберите ценовой диапазон:" if category == "bouquet" else "🌿 Выберите ценовой диапазон:"
+    await c.message.edit_text(text, reply_markup=kb_price_filters(category))
     await c.answer()
 
 
 @router.callback_query(F.data.startswith("filter:"))
-async def filter_select(c: CallbackQuery):
-    _, cat, price_data = c.data.split(":")
+async def show_products(c: CallbackQuery):
+    parts = c.data.split(":")
+    category = parts[1]
+    price_data = parts[2]
 
     if price_data == "all":
         min_p, max_p = 0, 999999
     else:
-        a, b = price_data.split("-")
-        min_p = int(a)
-        max_p = int(b) if b else 999999
+        min_str, max_str = price_data.split("-")
+        min_p = int(min_str)
+        max_p = int(max_str) if max_str != "0" else 999999
 
-    await show_product(c, cat, min_p, max_p, 0, price_data)
-    await c.answer()
-
-
-async def show_product(c, category, min_p, max_p, index, price_data):
-    """
-    Display a product with navigation.
-    Handles photo from Telegram file_id, external URL, or local path.
-    Falls back to sending new message if edit fails.
-    """
     products = await get_products_cached(category, min_p, max_p)
 
     if not products:
-        await c.answer("😔 Товаров нет", show_alert=True)
+        await c.answer("😔 Товары не найдены", show_alert=True)
         return
 
-    product = products[index]
-    text = (
-        f"<b>{product.title}</b>\n\n"
-        f"{product.description or 'Описание скоро появится'}\n\n"
-        f"💰 Цена: <b>{product.price} ₽</b>"
-    )
-
-    markup = kb_product_nav(category, f"{min_p}-{max_p}", index, len(products), product.id)
-
-    photo: Optional[str | FSInputFile] = None
-    if product.photo_file_id:
-        photo = product.photo_file_id
-    elif product.image_url:
-        if product.image_url.startswith(('http://', 'https://')):
-            photo = product.image_url  # External URL
-        else:
-            # Assume local path relative to project root
-            base = Path(__file__).resolve().parent.parent.parent  # Adjust levels if needed: app/handlers/user.py -> root
-            path = base / product.image_url.lstrip('/')
-            if path.exists():
-                photo = FSInputFile(path)
-            else:
-                logger.warning(f"Local image path does not exist: {path}")
-
-    # If photo exists, prefer sending/editing as photo
-    if photo:
-        media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
-        try:
-            if c.message.photo:
-                await c.message.edit_media(media=media, reply_markup=markup)
-            else:
-                # If current message is text, can't edit to photo, so send new and delete old
-                await c.message.delete()
-                await c.message.answer_photo(photo=photo, caption=text, parse_mode="HTML", reply_markup=markup)
-        except Exception as e:
-            logger.error(f"Failed to edit/send photo: {e}")
-            try:
-                await c.message.delete()
-            except Exception:
-                pass
-            await c.message.answer_photo(photo=photo, caption=text, parse_mode="HTML", reply_markup=markup)
-    else:
-        # No photo, handle as text
-        try:
-            await c.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
-        except Exception as e:
-            logger.error(f"Failed to edit text: {e}")
-            try:
-                await c.message.delete()
-            except Exception:
-                pass
-            await c.message.answer(text, parse_mode="HTML", reply_markup=markup)
-
+    await show_product(c.message, category, price_data, 0, products)
     await c.answer()
+
+
+async def show_product(msg: Message, category: str, price_data: str, index: int, products: List[Product]):
+    p = products[index]
+    text = f"<b>{p.title}</b>\n\n{p.description or ''}\n\n💰 {p.price} ₽"
+
+    photo_id = p.photo_file_id or p.image_url
+    if not photo_id:
+        await msg.edit_text(text, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
+        return
+
+    media = InputMediaPhoto(media=photo_id, caption=text)
+    try:
+        await msg.edit_media(media=media, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
+    except TelegramBadRequest:
+        await msg.answer_photo(photo=photo_id, caption=text, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
 
 
 @router.callback_query(F.data.startswith("nav:"))
-async def product_nav(c: CallbackQuery):
-    _, cat, price_data, idx_str = c.data.split(":")
-    index = int(idx_str)
+async def nav_product(c: CallbackQuery):
+    parts = c.data.split(":")
+    category = parts[1]
+    price_data = parts[2]
+    index = int(parts[3])
 
-    if price_data == "all":
-        min_p, max_p = 0, 999999
-    else:
-        a, b = price_data.split("-")
-        min_p = int(a)
-        max_p = int(b) if b else 999999
-
-    await show_product(c, cat, min_p, max_p, index, price_data)
-    await c.answer()
-
-
-@router.callback_query(F.data == "my:req:list")
-async def my_requests_list(c: CallbackQuery):
-    """
-    List user's requests with navigation to view each.
-    """
-    async with get_sessionmaker()() as session:
-        res = await session.execute(
-            select(Request)
-            .join(Request.user)
-            .where(User.tg_id == c.from_user.id)
-            .order_by(Request.created_at.desc())
-        )
-        requests = res.scalars().all()
-
-    if not requests:
-        await c.answer("😔 У вас нет заявок", show_alert=True)
-        return
-
-    items = [(req.id, request_label(req)) for req in requests]
-    await c.message.edit_text("📦 Ваши заявки:", reply_markup=kb_my_requests_list(items))
-    await c.answer()
-
-
-@router.callback_query(F.data.startswith("my:req:view:"))
-async def my_request_view(c: CallbackQuery):
-    """
-    View details of a specific user request.
-    Allows cancellation if status is NEW.
-    """
-    request_id = int(c.data.split(":")[-1])
-
-    async with get_sessionmaker()() as session:
-        req = await session.scalar(
-            select(Request)
-            .options(selectinload(Request.product), selectinload(Request.user))
-            .where(Request.id == request_id)
-        )
-
-    if not req or req.user.tg_id != c.from_user.id:
-        await c.answer("🚫 Нет доступа", show_alert=True)
-        return
-
-    price = req.product.price if req.product else 0
-
-    text = (
-        f"📄 <b>Заявка №{req.id}</b>\n\n"
-        f"👤 Имя: {req.customer_name or '—'}\n"
-        f"💐 Товар: {req.product.title if req.product else '—'}\n"
-        f"💰 Сумма: <b>{price} ₽</b>\n"
-        f"📞 Телефон: <code>{req.phone or '—'}</code>\n"
-        f"🚚 Получение: {delivery_human(req.delivery_type)}\n"
-        f"💳 Оплата: {payment_human(req.payment_type)}\n"
+    products = await get_products_cached(
+        category,
+        int(price_data.split("-")[0]) if "-" in price_data else 0,
+        int(price_data.split("-")[1]) if "-" in price_data and price_data.split("-")[1] != "0" else 999999
     )
 
-    if req.delivery_type == "delivery":
-        text += f"📍 Адрес: {req.address or '—'}\n"
-
-    if req.comment:
-        text += f"📝 Комментарий: {req.comment}\n"
-
-    text += f"\n📌 Статус: <b>{req.status.value.upper()}</b>"
-
-    can_cancel = req.status == RequestStatus.NEW
-    await c.message.edit_text(text, reply_markup=kb_my_request_view(req.id, can_cancel))
+    await show_product(c.message, category, price_data, index, products)
     await c.answer()
 
+
+# ==========================
+# Request FSM
+# ==========================
 
 @router.callback_query(F.data.startswith("req:start:"))
 async def req_start(c: CallbackQuery, state: FSMContext):
-    """
-    Start request FSM for a product.
-    Saves product ID and prompts for delivery type.
-    """
-    product_id = int(c.data.split(":")[2])
-    await state.update_data(product_id=product_id)
+    product_id = int(c.data.split(":")[-1])
+    await state.set_state(RequestFSM.need_date)
+    await state.set_data({"product_id": product_id})
+    await c.message.answer("📅 Укажите дату, на которую нужен букет (формат: 03.03.2026):", reply_markup=kb_main_menu_bottom())
+    await c.answer()
+
+
+@router.message(RequestFSM.need_date)
+async def req_need_date(m: Message, state: FSMContext):
+    try:
+        need_date = datetime.strptime(m.text.strip(), "%d.%m.%Y")
+    except ValueError:
+        await m.answer("❌ Неверный формат даты. Пожалуйста, используйте DD.MM.YYYY (например, 03.03.2026).")
+        return
+
+    data = await state.get_data()
+    data["need_date"] = need_date.strftime("%d.%m.%Y")
+    await state.set_data(data)
     await state.set_state(RequestFSM.delivery_type)
-
-    try:
-        await c.message.edit_caption(
-            caption="🚚 Выберите способ получения:",
-            reply_markup=kb_delivery_type(),
-        )
-    except Exception:
-        await c.message.edit_text(
-            "🚚 Выберите способ получения:",
-            reply_markup=kb_delivery_type(),
-        )
-
-    await c.answer()
+    await m.answer("🚚 Выберите способ получения:", reply_markup=kb_delivery_type())
 
 
-@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery:"))
-async def req_delivery(c: CallbackQuery, state: FSMContext):
-    """
-    Handle delivery type selection in FSM.
-    Saves type and prompts for payment.
-    """
-    delivery_type = c.data.split(":")[2]
+@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery_type:"))
+async def req_delivery_type(c: CallbackQuery, state: FSMContext):
+    delivery_type = c.data.split(":")[-1]
     await state.update_data(delivery_type=delivery_type)
-    await state.set_state(RequestFSM.payment_type)
 
-    is_pickup = delivery_type == "pickup"
-    text = "💳 Выберите способ оплаты:"
-    markup = kb_payment_type(is_pickup=is_pickup)
-
-    try:
-        await c.message.edit_caption(caption=text, reply_markup=markup, parse_mode="HTML")
-    except Exception:
-        await c.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-
+    if delivery_type == "delivery":
+        await state.set_state(RequestFSM.address)
+        await c.message.answer("📍 Укажите адрес доставки:")
+    else:
+        await state.set_state(RequestFSM.payment_type)
+        await c.message.edit_text("💳 Выберите способ оплаты:", reply_markup=kb_payment_type(delivery_type))
     await c.answer()
 
 
-@router.callback_query(RequestFSM.payment_type, F.data.startswith("req:pay:"))
-async def req_payment(c: CallbackQuery, state: FSMContext):
-    """
-    Handle payment type selection in FSM.
-    Saves type and prompts for customer name.
-    """
-    payment_type = c.data.split(":")[2]
+@router.message(RequestFSM.address)
+async def req_address(m: Message, state: FSMContext):
+    await state.update_data(address=m.text.strip())
+    data = await state.get_data()
+    await state.set_state(RequestFSM.payment_type)
+    await m.answer("💳 Выберите способ оплаты:", reply_markup=kb_payment_type(data["delivery_type"]))
+
+
+@router.callback_query(RequestFSM.payment_type, F.data.startswith("req:payment_type:"))
+async def req_payment_type(c: CallbackQuery, state: FSMContext):
+    payment_type = c.data.split(":")[-1]
     await state.update_data(payment_type=payment_type)
     await state.set_state(RequestFSM.customer_name)
-    text = "👤 Как к вам обращаться?"
-
-    await c.message.answer(text, parse_mode="HTML")
-
+    await c.message.answer("👤 Укажите ваше имя:")
     await c.answer()
 
 
 @router.message(RequestFSM.customer_name)
 async def req_customer_name(m: Message, state: FSMContext):
-    """
-    Handle customer name input in FSM.
-    Saves name and prompts for phone.
-    """
     await state.update_data(customer_name=m.text.strip())
     await state.set_state(RequestFSM.phone)
     await m.answer("📞 Укажите номер телефона:")
@@ -473,48 +268,19 @@ async def req_customer_name(m: Message, state: FSMContext):
 
 @router.message(RequestFSM.phone)
 async def req_phone(m: Message, state: FSMContext):
-    """
-    Handle phone input in FSM.
-    Saves phone and branches based on delivery type.
-    """
     await state.update_data(phone=m.text.strip())
-    data = await state.get_data()
-
-    if data["delivery_type"] == "delivery":
-        await state.set_state(RequestFSM.address)
-        await m.answer("📍 Укажите адрес доставки:")
-    else:
-        await state.set_state(RequestFSM.comment)
-        await m.answer("📝 Добавить комментарий к заказу?", reply_markup=kb_skip_comment())
-
-
-@router.message(RequestFSM.address)
-async def req_address(m: Message, state: FSMContext):
-    """
-    Handle address input in FSM (for delivery).
-    Saves address and prompts for comment.
-    """
-    await state.update_data(address=m.text.strip())
     await state.set_state(RequestFSM.comment)
-    await m.answer("📝 Добавить комментарий к заказу?", reply_markup=kb_skip_comment())
+    await m.answer("📝 Добавьте комментарий (опционально):", reply_markup=kb_skip_comment())
 
 
 @router.message(RequestFSM.comment)
 async def req_comment(m: Message, state: FSMContext):
-    """
-    Handle comment input in FSM.
-    Saves comment and shows confirmation.
-    """
     await state.update_data(comment=m.text.strip())
     await show_confirm(m, state)
 
 
 @router.callback_query(RequestFSM.comment, F.data == "req:skip_comment")
 async def skip_comment_handler(c: CallbackQuery, state: FSMContext):
-    """
-    Handle skip comment callback in FSM.
-    Sets empty comment and shows confirmation.
-    """
     await state.update_data(comment=None)
     await show_confirm(c.message, state)
     await c.answer()
@@ -530,6 +296,7 @@ async def show_confirm(msg: Message, state: FSMContext):
 
     text = (
         f"<b>Проверьте данные:</b>\n\n"
+        f"📅 Дата: {data.get('need_date', '—')}\n"
         f"👤 Имя: {data.get('customer_name', '—')}\n"
         f"📞 Тел: {data.get('phone', '—')}\n"
         f"🚚 Получение: {delivery_human(data.get('delivery_type'))}\n"
@@ -561,6 +328,7 @@ async def req_confirm(c: CallbackQuery, state: FSMContext, config: Config):
             address=data.get("address"),
             payment_type=data.get("payment_type"),
             comment=data.get("comment"),
+            need_datetime=datetime.strptime(data["need_date"], "%d.%m.%Y") if "need_date" in data else None,
             status=RequestStatus.NEW,
         )
         session.add(new_request)

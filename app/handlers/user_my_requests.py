@@ -46,7 +46,8 @@ async def my_requests_list(c: CallbackQuery):
         }.get(r.status, "📦")
 
         price = r.product.price if r.product else 0
-        label = f"{status_icon} {r.customer_name} · {price} ₽"
+        date_str = r.need_datetime.strftime('%d.%m.%Y') if r.need_datetime else ''
+        label = f"{status_icon} {r.customer_name} · {price} ₽ {date_str}"
         items.append((r.id, label))
 
 

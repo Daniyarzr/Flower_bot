@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h2 class="text-xl font-bold text-gray-800 font-serif">Редактировать товар</h2>
+</div>
+
+<div class="bg-white p-4 rounded-3xl border border-pink-50 shadow-sm">
+    <form action="/catalog/edit/{{ product.id }}" method="post" enctype="multipart/form-data" class="space-y-4">
+        <input type="text" name="title" value="{{ product.title }}" placeholder="Название букета" required class="w-full border-pink-100 border p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-200 transition">
+        <input type="number" name="price" value="{{ product.price }}" placeholder="Цена (₽)" required class="w-full border-pink-100 border p-4 rounded-2xl outline-none">
+        
+        <textarea name="description" placeholder="Описание букета (состав, размер...)" class="w-full border-pink-100 border p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-200 transition" rows="3">{{ product.description }}</textarea>
+
+        <div class="flex flex-col space-y-1">
+            <label class="text-xs text-gray-400 ml-2">Категория</label>
+            <select name="category" class="w-full border-pink-100 border p-4 rounded-2xl bg-white outline-none">
+                <option value="bouquet" {% if product.category == "bouquet" %}selected{% endif %}>💐 Букет</option>
+                <option value="composition" {% if product.category == "composition" %}selected{% endif %}>🌿 Композиция</option>
+            </select>
+        </div>
+
+        <div class="flex flex-col space-y-1">
+            <label class="text-xs text-gray-400 ml-2">Новая фотография (опционально)</label>
+            <input type="file" name="file" accept="image/*" class="w-full border-pink-100 border p-3 rounded-2xl bg-pink-50 text-sm">
+        </div>
+
+        <button class="w-full bg-pink-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-pink-100 active:scale-95 transition">Сохранить изменения</button>
+    </form>
+</div>
+{% endblock %}
