@@ -193,7 +193,7 @@ async def orders_page(request: Request, session: AsyncSession = Depends(get_db))
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     result = await session.execute(
         select(Order)
-        .options(joinedload(Order.user))
+        .options(joinedload(Order.user), joinedload(Order.product))  # Добавьте joinedload для product
         .order_by(Order.id.desc()).limit(50)
     )
     orders = result.scalars().all()
