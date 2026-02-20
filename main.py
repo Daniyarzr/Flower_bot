@@ -10,6 +10,8 @@ from app.config import load_config
 from app.db import init_engine, create_tables
 from app.handlers import routers # Теперь берем из __init__.py
 
+from app.handlers import routers
+
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,

@@ -45,6 +45,14 @@ logger = logging.getLogger(__name__)
 _CATALOG_CACHE: Dict[Tuple[str, int, int], Tuple[List[Product], float]] = {}
 CATALOG_TTL = 300  # 5 minutes TTL for cache refresh
 
+@router.message(F.text == "/start")  # Или commands=['start']
+async def start_handler(m: Message):
+    is_admin = await is_admin_cached(m.from_user.id)
+    await m.answer("Добро пожаловать в BLOOM lavka!", reply_markup=kb_start(is_admin))
+
+@router.message()
+async def echo(m: Message):
+    await m.answer("Команда не распознана. Используйте /start для начала.🌸")
 
 async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Product]:
     """
