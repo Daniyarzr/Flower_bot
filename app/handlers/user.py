@@ -28,68 +28,25 @@ from app.keyboards import (
     kb_skip_comment,
     kb_start,
 )
-from app.models import BotText, CategoryEnum, PaymentType, Product, Request, RequestStatus, User, UserRole
+from app.models import BotText, CategoryEnum, Product, Request, RequestStatus, User
 from app.states import RequestFSM
 from app.utils import is_admin_cached
 
-# Initialize router for user handlers
 router = Router(name="user_router")
-
-# Logger setup for this module
 logger = logging.getLogger(__name__)
 
-# ==========================
-# Catalog Cache
-# ==========================
-# Cache structure: key = (category, min_price, max_price) -> (products_list, timestamp)
+# ========================== КЭШ КАТАЛОГА ==========================
 _CATALOG_CACHE: Dict[Tuple[str, int, int], Tuple[List[Product], float]] = {}
-CATALOG_TTL = 300  # 5 minutes TTL for cache refresh
-
-@router.message(F.text == "/start")  # Или commands=['start']
-async def start_handler(m: Message):
-    is_admin = await is_admin_cached(m.from_user.id)
-    await m.answer("Добро пожаловать в BLOOM lavka!", reply_markup=kb_start(is_admin))
-
-@router.message()
-async def echo(m: Message):
-    await m.answer("Команда не распознана. Используйте /start для начала.🌸")
+CATALOG_TTL = 300
 
 async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Product]:
-    """
-    Fetch products from database with caching to reduce query load.
-    Cache is invalidated after CATALOG_TTL seconds or if product count changes (e.g., due to additions/deletions).
-
-    :param category: Product category (e.g., 'bouquet')
-    :param min_p: Minimum price filter
-    :param max_p: Maximum price filter
-    :return: List of active products matching filters
-    """
     key = (category, min_p, max_p)
     now = time()
 
     cached = _CATALOG_CACHE.get(key)
     if cached and now - cached[1] < CATALOG_TTL:
-        # Validate cache by checking current DB count
-        Session = get_sessionmaker()
-        async with Session() as session:
-            result = await session.execute(
-                select(func.count(Product.id))
-                .where(
-                    Product.category == CategoryEnum(category),
-                    Product.is_active == True,
-                    Product.price >= min_p,
-                    Product.price <= max_p,
-                )
-            )
-            current_count = result.scalar()
+        return cached[0]
 
-            if current_count == len(cached[0]):
-                logger.debug(f"Cache hit for key: {key}")
-                return cached[0]
-            else:
-                logger.debug(f"Cache invalidated for key: {key} due to count mismatch (cached: {len(cached[0])}, current: {current_count})")
-
-    # Fetch fresh data
     async with get_sessionmaker()() as session:
         result = await session.execute(
             select(Product)
@@ -99,172 +56,170 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
                 Product.price >= min_p,
                 Product.price <= max_p,
             )
-            .order_by(Product.id.desc())
+            .order_by(Product.price)
         )
         products = result.scalars().all()
 
     _CATALOG_CACHE[key] = (products, now)
-    logger.debug(f"Cache updated for key: {key}")
     return products
 
 
-# ==========================
-# Human-readable helpers
-# ==========================
-
-def delivery_human(delivery_type: str | None) -> str:
-    mapping = {
-        "pickup": "🏃 Самовывоз",
-        "delivery": "🚚 Доставка",
-    }
-    return mapping.get(delivery_type, "—")
+# ========================== ПОМОЩНИКИ ==========================
+async def get_bot_text(key: str, default: str) -> str:
+    async with get_sessionmaker()() as session:
+        result = await session.execute(select(BotText).where(BotText.key == key))
+        obj = result.scalar_one_or_none()
+        return obj.value if obj else default
 
 
-def payment_human(payment_type: str | None) -> str:
-    mapping = {
-        "cash": "💵 Наличные",
-        "transfer": "💸 Перевод",
-        "card": "💳 Карта",
-    }
-    return mapping.get(payment_type, "—")
+def delivery_human(delivery_type: Optional[str]) -> str:
+    return {"pickup": "🏃 Самовывоз", "delivery": "🚚 Доставка"}.get(delivery_type, "—")
 
 
-# ==========================
-# Back to start
-# ==========================
-
-@router.callback_query(F.data == "back:start")
-async def back_to_start(c: CallbackQuery):
-    is_admin = await is_admin_cached(c.from_user.id)
-    await c.message.edit_text("Добро пожаловать в BLOOM lavka!", reply_markup=kb_start(is_admin))
-    await c.answer()
+def payment_human(payment_type: Optional[str]) -> str:
+    return {"cash": "💵 Наличные", "transfer": "💸 Перевод", "card": "💳 Карта"}.get(payment_type, "—")
 
 
-# ==========================
-# Catalog
-# ==========================
+# ========================== СТАРТ ==========================
+@router.message(F.text.in_({"/start", "🏠 Главное меню"}))
+async def start_handler(m: Message, config: Config):
+    async with get_sessionmaker()() as session:
+        await upsert_user(
+            session=session,
+            tg_id=m.from_user.id,
+            username=m.from_user.username,
+            first_name=m.from_user.first_name,
+            admin_ids=config.admin_ids,
+        )
 
+    welcome_text = await get_bot_text("start_message", "🌸 Добро пожаловать в BLOOM lavka!")
+    is_admin = await is_admin_cached(m.from_user.id)
+
+    await m.answer(welcome_text, reply_markup=kb_start(is_admin))
+    await m.answer(
+        "Чтобы вернуться в главное меню нажмите '🏠 Главное меню' ⬇️",
+        reply_markup=kb_main_menu_bottom(),
+    )
+
+
+# ========================== КАТАЛОГ ==========================
 @router.callback_query(F.data.startswith("cat:"))
-async def show_category(c: CallbackQuery):
-    category = c.data.split(":")[1]
-    text = "💐 Выберите ценовой диапазон:" if category == "bouquet" else "🌿 Выберите ценовой диапазон:"
-    await c.message.edit_text(text, reply_markup=kb_price_filters(category))
+async def category_select(c: CallbackQuery):
+    cat = c.data.split(":")[1]
+    await c.message.edit_text("💰 Выберите бюджет:", reply_markup=kb_price_filters(cat))
     await c.answer()
 
 
 @router.callback_query(F.data.startswith("filter:"))
-async def show_products(c: CallbackQuery):
-    parts = c.data.split(":")
-    category = parts[1]
-    price_data = parts[2]
-
+async def filter_select(c: CallbackQuery):
+    _, cat, price_data = c.data.split(":")
     if price_data == "all":
         min_p, max_p = 0, 999999
     else:
-        min_str, max_str = price_data.split("-")
-        min_p = int(min_str)
-        max_p = int(max_str) if max_str != "0" else 999999
+        a, b = price_data.split("-")
+        min_p = int(a)
+        max_p = int(b) if b else 999999
 
-    products = await get_products_cached(category, min_p, max_p)
-
-    if not products:
-        await c.answer("😔 Товары не найдены", show_alert=True)
-        return
-
-    await show_product(c.message, category, price_data, 0, products)
+    await show_product(c, cat, min_p, max_p, 0, price_data)
     await c.answer()
 
 
-async def show_product(msg: Message, category: str, price_data: str, index: int, products: List[Product]):
-    p = products[index]
-    text = f"<b>{p.title}</b>\n\n{p.description or ''}\n\n💰 {p.price} ₽"
-
-    photo_id = p.photo_file_id or p.image_url
-    if not photo_id:
-        await msg.edit_text(text, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
+async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, index: int, price_data: str):
+    products = await get_products_cached(category, min_p, max_p)
+    if not products:
+        await c.answer("😔 Товаров нет", show_alert=True)
         return
 
-    media = InputMediaPhoto(media=photo_id, caption=text)
-    try:
-        await msg.edit_media(media=media, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
-    except TelegramBadRequest:
-        await msg.answer_photo(photo=photo_id, caption=text, reply_markup=kb_product_nav(category, price_data, index, len(products), p.id))
+    product = products[index]
+    text = f"<b>{product.title}</b>\n\n{product.description or 'Описание скоро появится'}\n\n💰 Цена: <b>{product.price} ₽</b>"
+
+    markup = kb_product_nav(category, price_data, index, len(products), product.id)
+
+    # === ИСПРАВЛЕНИЕ ОШИБКИ С ФОТО ===
+    photo = None
+    if product.photo_file_id:
+        photo = product.photo_file_id
+    elif product.image_url:
+        if product.image_url.startswith(("http://", "https://")):
+            photo = product.image_url
+        else:
+            base = Path(__file__).resolve().parent.parent.parent
+            path = base / product.image_url.lstrip("/")
+            if path.exists():
+                photo = FSInputFile(path)
+
+    if photo:
+        media = InputMediaPhoto(media=photo, caption=text, parse_mode="HTML")
+        try:
+            if c.message.photo:
+                await c.message.edit_media(media=media, reply_markup=markup)
+            else:
+                await c.message.delete()
+                await c.message.answer_photo(photo=photo, caption=text, parse_mode="HTML", reply_markup=markup)
+        except Exception:
+            await c.message.answer_photo(photo=photo, caption=text, parse_mode="HTML", reply_markup=markup)
+    else:
+        try:
+            await c.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        except Exception:
+            await c.message.answer(text, parse_mode="HTML", reply_markup=markup)
+
+    await c.answer()
 
 
 @router.callback_query(F.data.startswith("nav:"))
-async def nav_product(c: CallbackQuery):
-    parts = c.data.split(":")
-    category = parts[1]
-    price_data = parts[2]
-    index = int(parts[3])
-
-    products = await get_products_cached(
-        category,
-        int(price_data.split("-")[0]) if "-" in price_data else 0,
-        int(price_data.split("-")[1]) if "-" in price_data and price_data.split("-")[1] != "0" else 999999
-    )
-
-    await show_product(c.message, category, price_data, index, products)
+async def product_nav(c: CallbackQuery):
+    _, cat, price_data, idx_str = c.data.split(":")
+    index = int(idx_str)
+    if price_data == "all":
+        min_p, max_p = 0, 999999
+    else:
+        a, b = price_data.split("-")
+        min_p = int(a)
+        max_p = int(b) if b else 999999
+    await show_product(c, cat, min_p, max_p, index, price_data)
     await c.answer()
 
 
-# ==========================
-# Request FSM
-# ==========================
-
+# ========================== ОФОРМЛЕНИЕ ЗАКАЗА ==========================
 @router.callback_query(F.data.startswith("req:start:"))
 async def req_start(c: CallbackQuery, state: FSMContext):
-    product_id = int(c.data.split(":")[-1])
+    product_id = int(c.data.split(":")[2])
+    await state.update_data(product_id=product_id)
     await state.set_state(RequestFSM.need_date)
-    await state.set_data({"product_id": product_id})
-    await c.message.answer("📅 Укажите дату, на которую нужен букет (формат: 03.03.2026):", reply_markup=kb_main_menu_bottom())
+    await c.message.answer("📅 Укажите дату, на которую нужен букет (формат: 03.03.2026):")
     await c.answer()
 
 
 @router.message(RequestFSM.need_date)
 async def req_need_date(m: Message, state: FSMContext):
     try:
-        need_date = datetime.strptime(m.text.strip(), "%d.%m.%Y")
+        dt = datetime.strptime(m.text.strip(), "%d.%m.%Y")
+        await state.update_data(need_date=dt)
+        await state.set_state(RequestFSM.delivery_type)
+        await m.answer("🚚 Выберите способ получения:", reply_markup=kb_delivery_type())
     except ValueError:
-        await m.answer("❌ Неверный формат даты. Пожалуйста, используйте DD.MM.YYYY (например, 03.03.2026).")
-        return
-
-    data = await state.get_data()
-    data["need_date"] = need_date.strftime("%d.%m.%Y")
-    await state.set_data(data)
-    await state.set_state(RequestFSM.delivery_type)
-    await m.answer("🚚 Выберите способ получения:", reply_markup=kb_delivery_type())
+        await m.answer("❌ Неверный формат! Используйте DD.MM.YYYY (например 03.03.2026)")
 
 
-@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery_type:"))
-async def req_delivery_type(c: CallbackQuery, state: FSMContext):
-    delivery_type = c.data.split(":")[-1]
+@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery:"))
+async def req_delivery(c: CallbackQuery, state: FSMContext):
+    delivery_type = c.data.split(":")[2]
     await state.update_data(delivery_type=delivery_type)
-
-    if delivery_type == "delivery":
-        await state.set_state(RequestFSM.address)
-        await c.message.answer("📍 Укажите адрес доставки:")
-    else:
-        await state.set_state(RequestFSM.payment_type)
-        await c.message.edit_text("💳 Выберите способ оплаты:", reply_markup=kb_payment_type(delivery_type))
+    await state.set_state(RequestFSM.payment_type)
+    await c.message.edit_text(
+        "💳 Выберите способ оплаты:",
+        reply_markup=kb_payment_type(delivery_type)   # динамическая клавиатура
+    )
     await c.answer()
 
 
-@router.message(RequestFSM.address)
-async def req_address(m: Message, state: FSMContext):
-    await state.update_data(address=m.text.strip())
-    data = await state.get_data()
-    await state.set_state(RequestFSM.payment_type)
-    await m.answer("💳 Выберите способ оплаты:", reply_markup=kb_payment_type(data["delivery_type"]))
-
-
-@router.callback_query(RequestFSM.payment_type, F.data.startswith("req:payment_type:"))
-async def req_payment_type(c: CallbackQuery, state: FSMContext):
-    payment_type = c.data.split(":")[-1]
+@router.callback_query(RequestFSM.payment_type, F.data.startswith("req:pay:"))
+async def req_payment(c: CallbackQuery, state: FSMContext):
+    payment_type = c.data.split(":")[2]
     await state.update_data(payment_type=payment_type)
     await state.set_state(RequestFSM.customer_name)
-    await c.message.answer("👤 Укажите ваше имя:")
-    await c.answer()
+    await c.message.answer("👤 Как к вам обращаться?")
 
 
 @router.message(RequestFSM.customer_name)
@@ -277,8 +232,20 @@ async def req_customer_name(m: Message, state: FSMContext):
 @router.message(RequestFSM.phone)
 async def req_phone(m: Message, state: FSMContext):
     await state.update_data(phone=m.text.strip())
+    data = await state.get_data()
+    if data["delivery_type"] == "delivery":
+        await state.set_state(RequestFSM.address)
+        await m.answer("📍 Укажите адрес доставки:")
+    else:
+        await state.set_state(RequestFSM.comment)
+        await m.answer("📝 Добавить комментарий?", reply_markup=kb_skip_comment())
+
+
+@router.message(RequestFSM.address)
+async def req_address(m: Message, state: FSMContext):
+    await state.update_data(address=m.text.strip())
     await state.set_state(RequestFSM.comment)
-    await m.answer("📝 Добавьте комментарий (опционально):", reply_markup=kb_skip_comment())
+    await m.answer("📝 Добавить комментарий?", reply_markup=kb_skip_comment())
 
 
 @router.message(RequestFSM.comment)
@@ -295,16 +262,11 @@ async def skip_comment_handler(c: CallbackQuery, state: FSMContext):
 
 
 async def show_confirm(msg: Message, state: FSMContext):
-    """
-    Display confirmation screen with all FSM data.
-    Transitions to confirm state.
-    """
     data = await state.get_data()
     await state.set_state(RequestFSM.confirm)
-
     text = (
         f"<b>Проверьте данные:</b>\n\n"
-        f"📅 Дата: {data.get('need_date', '—')}\n"
+        f"📅 Дата: {data.get('need_date').strftime('%d.%m.%Y')}\n"
         f"👤 Имя: {data.get('customer_name', '—')}\n"
         f"📞 Тел: {data.get('phone', '—')}\n"
         f"🚚 Получение: {delivery_human(data.get('delivery_type'))}\n"
@@ -312,22 +274,15 @@ async def show_confirm(msg: Message, state: FSMContext):
         f"💳 Оплата: {payment_human(data.get('payment_type'))}\n"
         f"📝 Комментарий: {data.get('comment', '—')}"
     )
-
     await msg.answer(text, reply_markup=kb_confirm())
 
 
 @router.callback_query(RequestFSM.confirm, F.data == "req:confirm:yes")
 async def req_confirm(c: CallbackQuery, state: FSMContext, config: Config):
-    """
-    Handle confirmation yes in FSM.
-    Creates request in DB, notifies admins, clears state.
-    """
     data = await state.get_data()
-
     async with get_sessionmaker()() as session:
         user = await session.scalar(select(User).where(User.tg_id == c.from_user.id))
-
-        new_request = Request(
+        req = Request(
             user_id=user.id,
             product_id=data["product_id"],
             customer_name=data.get("customer_name"),
@@ -336,34 +291,25 @@ async def req_confirm(c: CallbackQuery, state: FSMContext, config: Config):
             address=data.get("address"),
             payment_type=data.get("payment_type"),
             comment=data.get("comment"),
-            need_datetime=datetime.strptime(data["need_date"], "%d.%m.%Y") if "need_date" in data else None,
+            need_datetime=data.get("need_date"),
             status=RequestStatus.NEW,
         )
-        session.add(new_request)
+        session.add(req)
         await session.commit()
 
     await state.clear()
-    await c.message.edit_text(
-        "🎉 Заявка отправлена! Мы скоро свяжемся.",
-        reply_markup=kb_after_request_sent(),
-    )
+    await c.message.edit_text("🎉 Заявка отправлена! Мы скоро свяжемся.", reply_markup=kb_after_request_sent())
 
-    # Notify admins
     for admin_id in config.admin_ids:
         try:
             await c.bot.send_message(admin_id, "🆕 Новая заявка!")
-        except Exception as e:
-            logger.warning(f"Failed to notify admin {admin_id}: {e}")
-
+        except Exception:
+            pass
     await c.answer()
 
 
 @router.callback_query(F.data == "req:cancel")
 async def req_cancel(c: CallbackQuery, state: FSMContext):
-    """
-    Cancel ongoing request FSM.
-    Clears state and returns to main menu.
-    """
     await state.clear()
-    await back_to_start(c)
-    await c.answer("❌ Заявка отменена")
+    await c.message.edit_text("❌ Заявка отменена")
+    await c.answer()
