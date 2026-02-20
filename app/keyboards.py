@@ -83,23 +83,18 @@ def kb_delivery_type() -> InlineKeyboardMarkup:
 
 def kb_payment_type(delivery_type: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    
     if delivery_type == "delivery":
-        # Только перевод и карта для доставки (убрали наличные)
         builder.row(
-            InlineKeyboardButton(text="💸 Перевод", callback_data="req:payment_type:transfer"),
-            InlineKeyboardButton(text="💳 Карта", callback_data="req:payment_type:card"),
+            InlineKeyboardButton(text="💸 Перевод", callback_data="req:pay:transfer"),
+            InlineKeyboardButton(text="💳 Карта", callback_data="req:pay:card"),
         )
     else:
-        # Для самовывоза все опции
         builder.row(
-            InlineKeyboardButton(text="💵 Наличные", callback_data="req:payment_type:cash"),
-            InlineKeyboardButton(text="💸 Перевод", callback_data="req:payment_type:transfer"),
+            InlineKeyboardButton(text="💵 Наличные", callback_data="req:pay:cash"),
+            InlineKeyboardButton(text="💸 Перевод", callback_data="req:pay:transfer"),
         )
-        builder.button(text="💳 Карта", callback_data="req:payment_type:card")
-    
-    builder.button(text="⬅ Назад", callback_data="req:back:payment")
-    builder.button(text="❌ Отмена", callback_data="req:cancel")
+        builder.button(text="💳 Карта", callback_data="req:pay:card")
+    builder.button(text="❌ Отменить", callback_data="req:cancel")
     return builder.as_markup()
 
 
