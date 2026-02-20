@@ -86,7 +86,6 @@ def kb_payment_type(delivery_type: str) -> InlineKeyboardMarkup:
     if delivery_type == "delivery":
         builder.row(
             InlineKeyboardButton(text="💸 Перевод", callback_data="req:pay:transfer"),
-            InlineKeyboardButton(text="💳 Карта", callback_data="req:pay:card"),
         )
     else:
         builder.row(
