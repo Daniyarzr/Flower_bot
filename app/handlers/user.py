@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
-from time import time
+from time import time as time_func  # Переименовал, чтобы не конфликтовать с import time
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import Router, F
@@ -55,7 +56,7 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
     :param max_p: Maximum price filter
     :return: List of active products matching filters """
     key = (category, min_p, max_p)
-    now = time()
+    now = time_func()
 
     cached = _CATALOG_CACHE.get(key)
     if cached and now - cached[1] < CATALOG_TTL:
@@ -107,6 +108,7 @@ async def get_bot_text(key: str, default: str) -> str:
         obj = result.scalar_one_or_none()
         return obj.value if obj else default
 
+
 def delivery_human(delivery_type: str | None) -> str:
     mapping = {
         "pickup": "🏃 Самовывоз",
@@ -136,8 +138,8 @@ def request_label(req: Request) -> str:
 
 @router.message(F.text.in_({"/start", "🏠 Главное меню"}))
 async def start_handler(m: Message, config: Config):
-    """ Handle /start command or 'Main Menu' button.
-    Registers/updates user and shows welcome message with menu. """
+    start_time = time_func()
+    logger.info("Start handler started")
     async with get_sessionmaker()() as session:
         await upsert_user(
             session=session,
@@ -151,29 +153,30 @@ async def start_handler(m: Message, config: Config):
     is_admin = await is_admin_cached(m.from_user.id)
 
     await m.answer(welcome_text, reply_markup=kb_start(is_admin))
-    # Add persistent bottom menu button
     await m.answer(
         "Чтобы вернуться в главное меню нажмите '🏠 Главное меню' ⬇️",
         reply_markup=kb_main_menu_bottom(),
     )
+    logger.info(f"Start handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data == "support")
 async def support_handler(c: CallbackQuery):
-    """ Handle support callback.
-    Displays support message and returns to main menu. """
+    start_time = time_func()
+    logger.info("Support handler started")
     is_admin = await is_admin_cached(c.from_user.id)
     support_text = await get_bot_text(
         "support_message", "❓ Возникли вопросы? Напишите нашему менеджеру."
     )
     await c.message.edit_text(support_text, reply_markup=kb_start(is_admin))
     await c.answer()
+    logger.info(f"Support handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data == "back:start")
 async def back_to_start(c: CallbackQuery):
-    """ Handle back to start callback.
-    Returns to main menu, handling potential message edit failures. """
+    start_time = time_func()
+    logger.info("Back to start handler started")
     is_admin = await is_admin_cached(c.from_user.id)
     text = "🏠 Главное меню"
     markup = kb_start(is_admin=is_admin)
@@ -186,12 +189,13 @@ async def back_to_start(c: CallbackQuery):
             pass
         await c.message.answer(text, reply_markup=markup)
     await c.answer()
+    logger.info(f"Back to start handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data.startswith("cat:"))
 async def category_select(c: CallbackQuery):
-    """ Handle category selection callback.
-    Shows price filters for selected category. """
+    start_time = time_func()
+    logger.info("Category select handler started")
     cat = c.data.split(":")[1]
     text = "💰 Выберите бюджет:"
     markup = kb_price_filters(cat)
@@ -204,10 +208,13 @@ async def category_select(c: CallbackQuery):
         else:
             raise
     await c.answer()
+    logger.info(f"Category select handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data.startswith("filter:"))
 async def filter_select(c: CallbackQuery):
+    start_time = time_func()
+    logger.info("Filter select handler started")
     _, cat, price_data = c.data.split(":")
     if price_data == "all":
         min_p, max_p = 0, 999999
@@ -217,12 +224,12 @@ async def filter_select(c: CallbackQuery):
         max_p = int(b) if b else 999999
     await show_product(c, cat, min_p, max_p, 0, price_data)
     await c.answer()
+    logger.info(f"Filter select handler done in {time_func() - start_time} s")
 
 
 async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, index: int, price_data: str):
-    """ Display a product with navigation.
-    Handles photo from Telegram file_id, external URL, or local path.
-    Falls back to sending new message if edit fails. """
+    start_time = time_func()
+    logger.info("Show product started")
     products = await get_products_cached(category, min_p, max_p)
     if not products:
         await c.answer("😔 Товаров нет", show_alert=True)
@@ -245,7 +252,7 @@ async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, 
         else:
             base = Path(__file__).resolve().parent.parent.parent
             path = base / product.image_url.lstrip('/')
-            if path.exists() and path.stat().st_size > 0:  # Фикс: проверка на non-empty file
+            if path.exists() and path.stat().st_size > 0:
                 photo = FSInputFile(path)
             else:
                 logger.warning(f"Local image path does not exist or empty: {path}")
@@ -277,10 +284,13 @@ async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, 
             await c.message.answer(text, parse_mode="HTML", reply_markup=markup)
 
     await c.answer()
+    logger.info(f"Show product done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data.startswith("nav:"))
 async def product_nav(c: CallbackQuery):
+    start_time = time_func()
+    logger.info("Product nav handler started")
     _, cat, price_data, idx_str = c.data.split(":")
     index = int(idx_str)
     if price_data == "all":
@@ -291,11 +301,13 @@ async def product_nav(c: CallbackQuery):
         max_p = int(b) if b else 999999
     await show_product(c, cat, min_p, max_p, index, price_data)
     await c.answer()
+    logger.info(f"Product nav handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data == "my:req:list")
 async def my_requests_list(c: CallbackQuery):
-    """ List user's requests with navigation to view each. """
+    start_time = time_func()
+    logger.info("My requests list handler started")
     async with get_sessionmaker()() as session:
         res = await session.execute(
             select(Request)
@@ -312,12 +324,13 @@ async def my_requests_list(c: CallbackQuery):
     items = [(req.id, request_label(req)) for req in requests]
     await c.message.edit_text("📦 Ваши заявки:", reply_markup=kb_my_requests_list(items))
     await c.answer()
+    logger.info(f"My requests list handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data.startswith("my:req:view:"))
 async def my_request_view(c: CallbackQuery):
-    """ View details of a specific user request.
-    Allows cancellation if status is NEW. """
+    start_time = time_func()
+    logger.info("My request view handler started")
     request_id = int(c.data.split(":")[-1])
 
     async with get_sessionmaker()() as session:
@@ -356,22 +369,25 @@ async def my_request_view(c: CallbackQuery):
     can_cancel = req.status == RequestStatus.NEW
     await c.message.edit_text(text, reply_markup=kb_my_request_view(req.id, can_cancel))
     await c.answer()
+    logger.info(f"My request view handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data.startswith("req:start:"))
 async def req_start(c: CallbackQuery, state: FSMContext):
-    """ Start request FSM for a product.
-    Saves product ID and prompts for date. """
+    start_time = time_func()
+    logger.info("Req start handler started")
     product_id = int(c.data.split(":")[2])
     await state.update_data(product_id=product_id)
     await state.set_state(RequestFSM.need_date)
     await c.message.answer("📅 Укажите дату, на которую нужен букет (формат: 03.03.2026):")
     await c.answer()
+    logger.info(f"Req start handler done in {time_func() - start_time} s")
 
 
 @router.message(RequestFSM.need_date)
 async def req_need_date(m: Message, state: FSMContext):
-    """ Handle date input in FSM. Saves date and prompts for delivery type. """
+    start_time = time_func()
+    logger.info("Req need date handler started")
     try:
         need_datetime = datetime.strptime(m.text.strip(), "%d.%m.%Y")
         await state.update_data(need_datetime=need_datetime)
@@ -381,12 +397,13 @@ async def req_need_date(m: Message, state: FSMContext):
 
     await state.set_state(RequestFSM.delivery_type)
     await m.answer("🚚 Выберите способ получения:", reply_markup=kb_delivery_type())
+    logger.info(f"Req need date handler done in {time_func() - start_time} s")
 
 
-@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery:"))
+@router.callback_query(RequestFSM.delivery_type, F.data.startswith("req:delivery_type:"))
 async def req_delivery(c: CallbackQuery, state: FSMContext):
-    """ Handle delivery type selection in FSM.
-    Saves type and prompts for payment. """
+    start_time = time_func()
+    logger.info("Req delivery handler started")
     delivery_type = c.data.split(":")[2]
     await state.update_data(delivery_type=delivery_type)
     await state.set_state(RequestFSM.payment_type)
@@ -397,32 +414,35 @@ async def req_delivery(c: CallbackQuery, state: FSMContext):
     except Exception:
         await c.message.answer(text, reply_markup=markup)
     await c.answer()
+    logger.info(f"Req delivery handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(RequestFSM.payment_type, F.data.startswith("req:pay:"))
 async def req_payment(c: CallbackQuery, state: FSMContext):
-    """ Handle payment type selection in FSM.
-    Saves type and prompts for customer name. """
+    start_time = time_func()
+    logger.info("Req payment handler started")
     payment_type = c.data.split(":")[2]
     await state.update_data(payment_type=payment_type)
     await state.set_state(RequestFSM.customer_name)
     await c.message.answer("👤 Как к вам обращаться?")
     await c.answer()
+    logger.info(f"Req payment handler done in {time_func() - start_time} s")
 
 
 @router.message(RequestFSM.customer_name)
 async def req_customer_name(m: Message, state: FSMContext):
-    """ Handle customer name input in FSM.
-    Saves name and prompts for phone. """
+    start_time = time_func()
+    logger.info("Req customer name handler started")
     await state.update_data(customer_name=m.text.strip())
     await state.set_state(RequestFSM.phone)
     await m.answer("📞 Укажите номер телефона:")
+    logger.info(f"Req customer name handler done in {time_func() - start_time} s")
 
 
 @router.message(RequestFSM.phone)
 async def req_phone(m: Message, state: FSMContext):
-    """ Handle phone input in FSM.
-    Saves phone and branches based on delivery type. """
+    start_time = time_func()
+    logger.info("Req phone handler started")
     await state.update_data(phone=m.text.strip())
     data = await state.get_data()
     if data["delivery_type"] == "delivery":
@@ -431,37 +451,41 @@ async def req_phone(m: Message, state: FSMContext):
     else:
         await state.set_state(RequestFSM.comment)
         await m.answer("📝 Добавить комментарий к заказу?", reply_markup=kb_skip_comment())
+    logger.info(f"Req phone handler done in {time_func() - start_time} s")
 
 
 @router.message(RequestFSM.address)
 async def req_address(m: Message, state: FSMContext):
-    """ Handle address input in FSM (for delivery).
-    Saves address and prompts for comment. """
+    start_time = time_func()
+    logger.info("Req address handler started")
     await state.update_data(address=m.text.strip())
     await state.set_state(RequestFSM.comment)
     await m.answer("📝 Добавить комментарий к заказу?", reply_markup=kb_skip_comment())
+    logger.info(f"Req address handler done in {time_func() - start_time} s")
 
 
 @router.message(RequestFSM.comment)
 async def req_comment(m: Message, state: FSMContext):
-    """ Handle comment input in FSM.
-    Saves comment and shows confirmation. """
+    start_time = time_func()
+    logger.info("Req comment handler started")
     await state.update_data(comment=m.text.strip())
     await show_confirm(m, state)
+    logger.info(f"Req comment handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(RequestFSM.comment, F.data == "req:skip_comment")
 async def skip_comment_handler(c: CallbackQuery, state: FSMContext):
-    """ Handle skip comment callback in FSM.
-    Sets empty comment and shows confirmation. """
+    start_time = time_func()
+    logger.info("Skip comment handler started")
     await state.update_data(comment=None)
     await show_confirm(c.message, state)
     await c.answer()
+    logger.info(f"Skip comment handler done in {time_func() - start_time} s")
 
 
 async def show_confirm(msg: Message, state: FSMContext):
-    """ Display confirmation screen with all FSM data.
-    Transitions to confirm state. """
+    start_time = time_func()
+    logger.info("Show confirm started")
     data = await state.get_data()
     await state.set_state(RequestFSM.confirm)
     date_str = data["need_datetime"].strftime('%d.%m.%Y') if "need_datetime" in data else '—'
@@ -476,12 +500,13 @@ async def show_confirm(msg: Message, state: FSMContext):
         f"📝 Комментарий: {data.get('comment', '—')}"
     )
     await msg.answer(text, reply_markup=kb_confirm())
+    logger.info(f"Show confirm done in {time_func() - start_time} s")
 
 
 @router.callback_query(RequestFSM.confirm, F.data == "req:confirm:yes")
 async def req_confirm(c: CallbackQuery, state: FSMContext, config: Config):
-    """ Handle confirmation yes in FSM.
-    Creates request in DB, notifies admins, clears state. """
+    start_time = time_func()
+    logger.info("Req confirm handler started")
     data = await state.get_data()
     async with get_sessionmaker()() as session:
         user = await session.scalar(select(User).where(User.tg_id == c.from_user.id))
@@ -515,12 +540,22 @@ async def req_confirm(c: CallbackQuery, state: FSMContext, config: Config):
             logger.warning(f"Failed to notify admin {admin_id}: {e}")
 
     await c.answer()
+    logger.info(f"Req confirm handler done in {time_func() - start_time} s")
 
 
 @router.callback_query(F.data == "req:cancel")
 async def req_cancel(c: CallbackQuery, state: FSMContext):
-    """ Cancel ongoing request FSM.
-    Clears state and returns to main menu. """
+    start_time = time_func()
+    logger.info("Req cancel handler started")
     await state.clear()
     await back_to_start(c)
     await c.answer("❌ Заявка отменена")
+    logger.info(f"Req cancel handler done in {time_func() - start_time} s")
+
+# Fallback for not handled messages
+@router.message()
+async def fallback(m: Message):
+    start_time = time_func()
+    logger.info("Fallback handler started for unhandled message")
+    await m.answer("Команда не распознана. Используйте /start или кнопки меню.")
+    logger.info(f"Fallback handler done in {time_func() - start_time} s")
