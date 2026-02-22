@@ -162,7 +162,7 @@ async def edit_product_save(
     price: int = Form(...), 
     description: str = Form(None),
     category: str = Form(...),
-    file: UploadFile = File(None),
+    file: UploadFile = File(None), # Здесь стоит None по умолчанию
     session: AsyncSession = Depends(get_db)
 ):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
@@ -170,21 +170,27 @@ async def edit_product_save(
     product = await session.get(Product, product_id)
     if not product: raise HTTPException(status_code=404)
     
+    # Обновляем текстовые поля (они обновятся в любом случае)
     product.title = title
     product.price = price
     product.description = description
     product.category = CategoryEnum(category)
     
+    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем, загружен ли новый файл
+    # Если файл не выбран, браузер пришлет пустой объект UploadFile с пустым именем
     if file and file.filename:
-        # Удаляем старое фото с диска
+        # 1. Удаляем старое физически с диска (если оно было)
         if product.image_url:
             old_path = product.image_url.lstrip('/')
             if os.path.exists(old_path):
                 os.remove(old_path)
         
-        # Сохраняем новое в формате WebP
+        # 2. Сохраняем новое фото в WebP
         product.image_url = await save_optimized_image(file)
     
+    # Если файл не прислали (file.filename пустой), 
+    # product.image_url останется прежним, каким и был в базе.
+
     await session.commit()
     return RedirectResponse("/catalog", status_code=303)
 

@@ -18,7 +18,12 @@
                 <option value="composition" {% if product.category == "composition" %}selected{% endif %}>🌿 Композиция</option>
             </select>
         </div>
-
+        {% if product.image_url %}
+        <div class="mb-4">
+            <p class="text-xs text-gray-400 ml-2 mb-2">Текущее фото:</p>
+            <img src="{{ product.image_url }}" class="w-32 h-32 object-cover rounded-2xl border border-pink-100">
+        </div>
+        {% endif %}
         <div class="flex flex-col space-y-1">
             <label class="text-xs text-gray-400 ml-2">Новая фотография (опционально)</label>
             <input type="file" name="file" accept="image/*" class="w-full border-pink-100 border p-3 rounded-2xl bg-pink-50 text-sm">
