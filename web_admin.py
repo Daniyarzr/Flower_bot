@@ -238,8 +238,8 @@ async def set_user_role(
     await session.commit()
     return RedirectResponse("/users", status_code=status.HTTP_303_SEE_OTHER)
 
-@app.post("/bot-text/update")
-async def update_bot_text(
+@app.post("/bot-texts/save")
+async def save_bot_text(
     request: Request,
     key: str = Form(...),
     value: str = Form(...),
