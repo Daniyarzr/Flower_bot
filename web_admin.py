@@ -142,35 +142,20 @@ async def add_product(
     return RedirectResponse("/catalog", status_code=303)
 
 # Новый роут: GET для формы редактирования
-@app.post("/catalog/edit/{product_id}")
-async def edit_product(
-    request: Request, product_id: int,
-    title: str = Form(...), price: int = Form(...), 
-    description: str = Form(None), category: str = Form(...),
-    file: UploadFile = File(None), session: AsyncSession = Depends(get_db)
-):
+# 1. Эта функция исправляет ошибку 405 (открывает страницу редактирования)
+@app.get("/catalog/edit/{product_id}", response_class=HTMLResponse)
+async def edit_product_page(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     
     product = await session.get(Product, product_id)
     if not product: raise HTTPException(status_code=404)
     
-    product.title, product.price, product.description = title, price, description
-    product.category = CategoryEnum(category)
-    
-    if file and file.filename:
-        # Чистим старое фото с диска
-        if product.image_url:
-            old_path = product.image_url.lstrip('/')
-            if os.path.exists(old_path): os.remove(old_path)
-        
-        product.image_url = await save_optimized_image(file)
-    
-    await session.commit()
-    return RedirectResponse("/catalog", status_code=303)
+    # Убедитесь, что у вас есть файл edit_product.html в папке шаблонов
+    return templates.TemplateResponse("edit_product.html", {"request": request, "product": product})
 
-# Новый роут: POST для сохранения изменений
+# 2. Эта функция сохраняет изменения и делает фото в формате WebP
 @app.post("/catalog/edit/{product_id}")
-async def edit_product(
+async def edit_product_save(
     request: Request, 
     product_id: int,
     title: str = Form(...), 
@@ -183,27 +168,25 @@ async def edit_product(
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     
     product = await session.get(Product, product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    if not product: raise HTTPException(status_code=404)
     
     product.title = title
     product.price = price
     product.description = description
     product.category = CategoryEnum(category)
     
-    if file:
-        # Удаляем старую фото, если была
-        if product.image_url and os.path.exists(product.image_url.lstrip('/')):
-            os.remove(product.image_url.lstrip('/'))
+    if file and file.filename:
+        # Удаляем старое фото с диска
+        if product.image_url:
+            old_path = product.image_url.lstrip('/')
+            if os.path.exists(old_path):
+                os.remove(old_path)
         
-        filename = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
-        filepath = os.path.join("static/uploads", filename)
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(await file.read())
-        product.image_url = f"/static/uploads/{filename}"
+        # Сохраняем новое в формате WebP
+        product.image_url = await save_optimized_image(file)
     
     await session.commit()
-    return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/catalog", status_code=303)
 
 @app.post("/catalog/delete/{product_id}")
 async def delete_product(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
