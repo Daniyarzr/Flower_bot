@@ -238,7 +238,28 @@ async def set_user_role(
     await session.commit()
     return RedirectResponse("/users", status_code=status.HTTP_303_SEE_OTHER)
 
+@app.post("/bot-text/update")
+async def update_bot_text(
+    request: Request,
+    key: str = Form(...),
+    value: str = Form(...),
+    session: AsyncSession = Depends(get_db)
+):
+    if not request.session.get("is_logged_in"):
+        return RedirectResponse("/")
 
+    result = await session.execute(select(BotText).where(BotText.key == key))
+    bot_text = result.scalar_one_or_none()
+
+    if bot_text:
+        bot_text.value = value
+    else:
+        bot_text = BotText(key=key, value=value)
+        session.add(bot_text)
+
+    await session.commit()
+
+    return RedirectResponse("/dashboard", status_code=303)
 
 # Создаем объект бота внутри web_admin
 bot_app = Bot(token=config.bot_token)
