@@ -16,6 +16,7 @@ from app.config import load_config
 from aiogram import Bot
 from PIL import Image  
 import io
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 app = FastAPI(title="BLOOM lavka Admin")
 config = load_config()
@@ -301,21 +302,39 @@ async def broadcast_message(
     if not request.session.get("is_logged_in"): 
         return RedirectResponse("/")
 
-    # 1. Получаем ID всех пользователей из базы
+    # 1. Получаем ID всех пользователей
     result = await session.execute(select(User.tg_id))
     user_ids = result.scalars().all()
+
+    # 2. Получаем имя бота, чтобы создать ссылку на него
+    bot_info = await bot_app.get_me()
+    bot_link = f"https://t.me/{bot_info.username}?start=ml" # Добавили параметр, чтобы кнопка всегда была активна
+
+    # 3. Создаем клавиатуру с кнопкой возврата в меню
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="💐 Перейти в главное меню", 
+                url=bot_link
+            )
+        ]
+    ])
 
     count = 0
     errors = 0
 
-    # 2. Рассылаем
+    # 4. Рассылаем
     for user_id in user_ids:
         try:
-            await bot_app.send_message(user_id, message)
+            await bot_app.send_message(
+                chat_id=user_id,
+                text=message,
+                reply_markup=keyboard, # Кнопка под сообщением
+                parse_mode="HTML"
+            )
             count += 1
         except Exception as e:
-            print(f"Ошибка отправки пользователю {user_id}: {e}")
+            print(f"Ошибка рассылки {user_id}: {e}")
             errors += 1
-    
-    # 3. Возвращаемся на главную с уведомлением (через query-параметр)
-    return RedirectResponse(f"/dashboard?sent={count}&errors={errors}", status_code=status.HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(f"/dashboard?sent={count}&errors={errors}", status_code=303)
