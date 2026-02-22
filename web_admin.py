@@ -14,6 +14,8 @@ from app.db import get_sessionmaker, init_engine
 from app.models import User, Product, Request as Order, UserRole, CategoryEnum, RequestStatus, BotText
 from app.config import load_config
 from aiogram import Bot
+from PIL import Image  
+import io
 
 app = FastAPI(title="BLOOM lavka Admin")
 config = load_config()
@@ -33,6 +35,26 @@ app.add_middleware(
 )
 
 templates = Jinja2Templates(directory="app/templates/admin")
+
+async def save_optimized_image(file: UploadFile) -> str:
+    """Конвертирует в WebP, меняет размер и сохраняет."""
+    content = await file.read()
+    img = Image.open(io.BytesIO(content))
+
+    # Конвертируем в RGB (для поддержки PNG и GIF)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    # Уменьшаем до 1024px по большей стороне (сохраняя пропорции)
+    img.thumbnail((1024, 1024))
+
+    filename = f"{uuid.uuid4()}.webp"
+    filepath = os.path.join("static/uploads", filename)
+
+    # Сохраняем с качеством 80%
+    img.save(filepath, format="WEBP", quality=80, optimize=True)
+    
+    return f"/static/uploads/{filename}"
 
 # Зависимость для БД
 async def get_db():
@@ -108,34 +130,43 @@ async def add_product(
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     
     image_url = None
-    if file:
-        filename = f"{uuid.uuid4()}.{file.filename.split('.')[-1]}"
-        filepath = os.path.join("static/uploads", filename)
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(await file.read())
-        image_url = f"/static/uploads/{filename}"
+    if file and file.filename:
+        image_url = await save_optimized_image(file)
     
     product = Product(
-        title=title,
-        price=price,
-        description=description,
-        category=CategoryEnum(category),
-        image_url=image_url
+        title=title, price=price, description=description,
+        category=CategoryEnum(category), image_url=image_url
     )
     session.add(product)
     await session.commit()
-    return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse("/catalog", status_code=303)
 
 # Новый роут: GET для формы редактирования
-@app.get("/catalog/edit/{product_id}", response_class=HTMLResponse)
-async def edit_product_form(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
+@app.post("/catalog/edit/{product_id}")
+async def edit_product(
+    request: Request, product_id: int,
+    title: str = Form(...), price: int = Form(...), 
+    description: str = Form(None), category: str = Form(...),
+    file: UploadFile = File(None), session: AsyncSession = Depends(get_db)
+):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
     
     product = await session.get(Product, product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    if not product: raise HTTPException(status_code=404)
     
-    return templates.TemplateResponse("edit_product.html", {"request": request, "product": product})
+    product.title, product.price, product.description = title, price, description
+    product.category = CategoryEnum(category)
+    
+    if file and file.filename:
+        # Чистим старое фото с диска
+        if product.image_url:
+            old_path = product.image_url.lstrip('/')
+            if os.path.exists(old_path): os.remove(old_path)
+        
+        product.image_url = await save_optimized_image(file)
+    
+    await session.commit()
+    return RedirectResponse("/catalog", status_code=303)
 
 # Новый роут: POST для сохранения изменений
 @app.post("/catalog/edit/{product_id}")
