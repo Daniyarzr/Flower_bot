@@ -306,16 +306,13 @@ async def broadcast_message(
     result = await session.execute(select(User.tg_id))
     user_ids = result.scalars().all()
 
-    # 2. Получаем имя бота, чтобы создать ссылку на него
-    bot_info = await bot_app.get_me()
-    bot_link = f"https://t.me/{bot_info.username}?start=ml" # Добавили параметр, чтобы кнопка всегда была активна
-
-    # 3. Создаем клавиатуру с кнопкой возврата в меню
+    # 2. Создаем клавиатуру с callback_data
+    # "back:start" — это стандартный колбэк в твоем боте для возврата в меню
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
                 text="💐 Перейти в главное меню", 
-                url=bot_link
+                callback_data="back:start" 
             )
         ]
     ])
@@ -323,18 +320,18 @@ async def broadcast_message(
     count = 0
     errors = 0
 
-    # 4. Рассылаем
+    # 3. Рассылка
     for user_id in user_ids:
         try:
             await bot_app.send_message(
                 chat_id=user_id,
                 text=message,
-                reply_markup=keyboard, # Кнопка под сообщением
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
             count += 1
         except Exception as e:
-            print(f"Ошибка рассылки {user_id}: {e}")
+            print(f"Ошибка при рассылке пользователю {user_id}: {e}")
             errors += 1
 
     return RedirectResponse(f"/dashboard?sent={count}&errors={errors}", status_code=303)
