@@ -239,26 +239,34 @@ async def set_user_role(
     return RedirectResponse("/users", status_code=status.HTTP_303_SEE_OTHER)
 
 @app.post("/bot-texts/save")
-async def save_bot_text(
+async def save_bot_texts(
     request: Request,
-    key: str = Form(...),
-    value: str = Form(...),
+    start_message: str = Form(...),
+    support_message: str = Form(...),
     session: AsyncSession = Depends(get_db)
 ):
     if not request.session.get("is_logged_in"):
         return RedirectResponse("/")
 
-    result = await session.execute(select(BotText).where(BotText.key == key))
-    bot_text = result.scalar_one_or_none()
+    # Словарь соответствия полей из формы и ключей в базе данных
+    texts_to_save = {
+        "start_message": start_message,
+        "support_message": support_message
+    }
 
-    if bot_text:
-        bot_text.value = value
-    else:
-        bot_text = BotText(key=key, value=value)
-        session.add(bot_text)
+    for key, value in texts_to_save.items():
+        # Ищем существующую запись по ключу
+        result = await session.execute(select(BotText).where(BotText.key == key))
+        bot_text = result.scalar_one_or_none()
+
+        if bot_text:
+            bot_text.value = value
+        else:
+            # Если записи еще нет, создаем новую
+            bot_text = BotText(key=key, value=value)
+            session.add(bot_text)
 
     await session.commit()
-
     return RedirectResponse("/dashboard", status_code=303)
 
 # Создаем объект бота внутри web_admin
