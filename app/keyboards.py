@@ -138,10 +138,7 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
     )
     
     
-    builder.button(
-        text="🎧 Поддержка",
-        callback_data="admin:support"
-        )
+
             
     # КНОПКА ДОБАВЛЕНИЯ ТОВАРА УДАЛЕНА
     builder.button(text="⬅ Выход", callback_data="back:start")
