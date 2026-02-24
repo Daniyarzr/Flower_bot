@@ -12,10 +12,9 @@
         <input type="number" name="price" value="{{ product.price }}" placeholder="Цена (₽)" required 
                class="w-full border-pink-100 border p-4 rounded-2xl outline-none">
 
+        <!-- Исправлено: без лишних переносов внутри textarea -->
         <textarea name="description" placeholder="Описание букета (состав, размер...)" 
-                  class="w-full border-pink-100 border p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-200 transition" rows="3">
-            {{ product.description }}
-        </textarea>
+                  class="w-full border-pink-100 border p-4 rounded-2xl outline-none focus:ring-2 focus:ring-pink-200 transition" rows="3">{{ product.description | default('', true) }}</textarea>
 
         <!-- Категория -->
         <div class="flex flex-col space-y-1">
@@ -26,7 +25,7 @@
             </select>
         </div>
 
-        <!-- Новое поле: Статус наличия -->
+        <!-- Статус наличия -->
         <div class="flex flex-col space-y-1">
             <label class="text-xs text-gray-400 ml-2">Статус наличия</label>
             <select name="is_in_stock" class="w-full border-pink-100 border p-4 rounded-2xl bg-white outline-none">
@@ -35,7 +34,6 @@
             </select>
         </div>
 
-        <!-- Текущее фото -->
         {% if product.image_url %}
         <div class="mb-4">
             <p class="text-xs text-gray-400 ml-2 mb-2">Текущее фото:</p>
@@ -43,7 +41,6 @@
         </div>
         {% endif %}
 
-        <!-- Новая фотография -->
         <div class="flex flex-col space-y-1">
             <label class="text-xs text-gray-400 ml-2">Новая фотография (опционально)</label>
             <input type="file" name="file" accept="image/*" 
