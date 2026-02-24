@@ -32,7 +32,8 @@ from app.keyboards import (
 from app.models import BotText, CategoryEnum, PaymentType, Product, Request, RequestStatus, User, UserRole
 from app.states import RequestFSM
 from app.utils import is_admin_cached
-
+import os
+os.makedirs("data", exist_ok=True)  # Создаём папку для файла-версии
 # Initialize router for user handlers
 router = Router(name="user_router")
 
@@ -46,15 +47,32 @@ logger = logging.getLogger(__name__)
 _CATALOG_CACHE: Dict[Tuple[str, int, int], Tuple[List[Product], float]] = {}
 CATALOG_TTL = 300  # 5 minutes TTL for cache refresh
 
+# Файл для синхронизации версии кэша между процессами (бот и админка)
+CACHE_VERSION_FILE = Path("data/catalog_cache_version.txt")
+_last_catalog_version: str | None = None
+
 
 async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Product]:
     """ Fetch products from database with caching to reduce query load.
     Cache is invalidated after CATALOG_TTL seconds or if product count changes (e.g., due to additions/deletions).
+    Also checks external version file for cross-process invalidation (from admin panel). """
+    
+    # === НОВОЕ: Проверка версии из файла (для админки) ===
+    global _last_catalog_version
+    try:
+        if CACHE_VERSION_FILE.exists():
+            current_version = CACHE_VERSION_FILE.read_text().strip()
+        else:
+            current_version = "0"
+    except Exception:
+        current_version = "0"
 
-    :param category: Product category (e.g., 'bouquet')
-    :param min_p: Minimum price filter
-    :param max_p: Maximum price filter
-    :return: List of active products matching filters """
+    if _last_catalog_version != current_version:
+        _CATALOG_CACHE.clear()
+        _last_catalog_version = current_version
+        logger.info(f"🧹 Кэш каталога очищен по версии из файла: {current_version[:10]}...")
+    # ====================================================
+
     key = (category, min_p, max_p)
     now = time_func()
 
@@ -78,7 +96,7 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
                 logger.debug(f"Cache hit for key: {key}")
                 return cached[0]
             else:
-                logger.debug(f"Cache invalidated for key: {key} due to count mismatch (cached: {len(cached[0])}, current: {current_count})")
+                logger.debug(f"Cache invalidated for key: {key} due to count mismatch")
 
     # Fetch fresh data
     async with get_sessionmaker()() as session:

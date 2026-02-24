@@ -18,6 +18,8 @@ from PIL import Image
 import io
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from app.handlers.user import _CATALOG_CACHE
+from pathlib import Path
+import time  # Для timestamp
 
 app = FastAPI(title="BLOOM lavka Admin")
 config = load_config()
@@ -57,6 +59,13 @@ async def save_optimized_image(file: UploadFile) -> str:
     img.save(filepath, format="WEBP", quality=80, optimize=True)
     
     return f"/static/uploads/{filename}"
+
+def update_catalog_cache_version():
+    """Обновляет версию кэша в файле, чтобы бот увидел изменения."""
+    os.makedirs("data", exist_ok=True)
+    version = str(time.time())
+    Path("data/catalog_cache_version.txt").write_text(version)
+    print(f"✅ Кэш-версия обновлена: {version}")
 
 # Зависимость для БД
 async def get_db():
@@ -171,7 +180,7 @@ async def add_product(
     )
     session.add(product)
     await session.commit()
-    _CATALOG_CACHE.clear()
+    update_catalog_cache_version()
     return RedirectResponse("/catalog", status_code=303)
 
 
@@ -216,7 +225,7 @@ async def edit_product_save(
         product.image_url = await save_optimized_image(file)
 
     await session.commit()
-    _CATALOG_CACHE.clear()
+    update_catalog_cache_version()
     return RedirectResponse("/catalog", status_code=303)
 
 @app.post("/catalog/delete/{product_id}")
@@ -229,7 +238,7 @@ async def delete_product(request: Request, product_id: int, session: AsyncSessio
     
     await session.execute(delete(Product).where(Product.id == product_id))
     await session.commit()
-    _CATALOG_CACHE.clear()
+    update_catalog_cache_version()
     return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
 # --- ЗАЯВКИ ---
