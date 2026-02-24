@@ -17,6 +17,7 @@ from aiogram import Bot
 from PIL import Image  
 import io
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from app.handlers.user import invalidate_catalog_cache
 
 app = FastAPI(title="BLOOM lavka Admin")
 config = load_config()
@@ -170,6 +171,7 @@ async def add_product(
     )
     session.add(product)
     await session.commit()
+    invalidate_catalog_cache()
     return RedirectResponse("/catalog", status_code=303)
 
 
@@ -214,7 +216,9 @@ async def edit_product_save(
         product.image_url = await save_optimized_image(file)
 
     await session.commit()
+    invalidate_catalog_cache()
     return RedirectResponse("/catalog", status_code=303)
+
 @app.post("/catalog/delete/{product_id}")
 async def delete_product(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
@@ -225,6 +229,7 @@ async def delete_product(request: Request, product_id: int, session: AsyncSessio
     
     await session.execute(delete(Product).where(Product.id == product_id))
     await session.commit()
+    invalidate_catalog_cache()
     return RedirectResponse("/catalog", status_code=status.HTTP_303_SEE_OTHER)
 
 # --- ЗАЯВКИ ---

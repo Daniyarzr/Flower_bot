@@ -234,7 +234,6 @@ async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, 
     start_time = time_func()
     logger.info("Show product started")
     products = await get_products_cached(category, min_p, max_p)
-    _CATALOG_CACHE.clear()
     if not products:
         await c.answer("😔 Товаров нет", show_alert=True)
         return
@@ -564,7 +563,10 @@ async def product_unavailable(c: CallbackQuery):
         "Попробуйте позже или посмотрите другие букеты.",
         show_alert=True
     )
-
+def invalidate_catalog_cache():
+    """Очищает кэш каталога после изменений в админке"""
+    _CATALOG_CACHE.clear()
+    
 # Fallback for not handled messages
 @router.message()
 async def fallback(m: Message):
