@@ -84,11 +84,12 @@ class Product(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, default="")
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     
-    # Исправлено: поддержка и file_id (внутри ТГ) и внешних ссылок (из админки)
     photo_file_id: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_in_stock: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # ← НОВОЕ ПОЛЕ
+    
     category: Mapped[CategoryEnum] = mapped_column(SQLEnum(CategoryEnum), nullable=False)
 
     requests: Mapped[list["Request"]] = relationship("Request", back_populates="product", cascade="all, delete-orphan")
