@@ -164,7 +164,7 @@ async def add_product(
     product = Product(
         title=title, 
         price=price, 
-        description=description,
+        description=(description or "").strip(),
         category=CategoryEnum(category),
         image_url=image_url,
         is_in_stock=(is_in_stock.lower() == "true")  # ← новое
@@ -204,7 +204,7 @@ async def edit_product_save(
     
     product.title = title
     product.price = price
-    product.description = description
+    product.description = (description or "").strip()
     product.category = CategoryEnum(category)
     product.is_in_stock = (is_in_stock.lower() == "true")  # ← новое
     

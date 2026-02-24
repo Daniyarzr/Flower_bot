@@ -46,7 +46,10 @@ logger = logging.getLogger(__name__)
 _CATALOG_CACHE: Dict[Tuple[str, int, int], Tuple[List[Product], float]] = {}
 CATALOG_TTL = 300  # 5 minutes TTL for cache refresh
 
-
+def invalidate_catalog_cache():
+    """Очищает кэш каталога после изменений в админке"""
+    _CATALOG_CACHE.clear()
+    
 async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Product]:
     """ Fetch products from database with caching to reduce query load.
     Cache is invalidated after CATALOG_TTL seconds or if product count changes (e.g., due to additions/deletions).
@@ -563,10 +566,8 @@ async def product_unavailable(c: CallbackQuery):
         "Попробуйте позже или посмотрите другие букеты.",
         show_alert=True
     )
-def invalidate_catalog_cache():
-    """Очищает кэш каталога после изменений в админке"""
-    _CATALOG_CACHE.clear()
-    
+
+
 # Fallback for not handled messages
 @router.message()
 async def fallback(m: Message):
