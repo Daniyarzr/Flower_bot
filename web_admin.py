@@ -113,10 +113,35 @@ async def dashboard(request: Request, session: AsyncSession = Depends(get_db)):
 # --- КАТАЛОГ ---
 
 @app.get("/catalog", response_class=HTMLResponse)
-async def catalog(request: Request, session: AsyncSession = Depends(get_db)):
-    if not request.session.get("is_logged_in"): return RedirectResponse("/")
-    products = (await session.execute(select(Product).order_by(Product.id.desc()))).scalars().all()
-    return templates.TemplateResponse("catalog.html", {"request": request, "products": products})
+async def catalog(
+    request: Request, 
+    stock: str = "all", 
+    session: AsyncSession = Depends(get_db)
+):
+    if not request.session.get("is_logged_in"): 
+        return RedirectResponse("/")
+
+    stmt = select(Product).order_by(
+        Product.is_in_stock.desc(), 
+        Product.id.desc()
+    )
+    
+    if stock == "in":
+        stmt = stmt.where(Product.is_in_stock.is_(True))
+    elif stock == "out":
+        stmt = stmt.where(Product.is_in_stock.is_(False))
+
+    products = (await session.execute(stmt)).scalars().all()
+    
+    return templates.TemplateResponse(
+        "catalog.html", 
+        {
+            "request": request, 
+            "products": products,
+            "stock_filter": stock
+        }
+    )
+
 
 @app.post("/catalog/add")
 async def add_product(
@@ -125,6 +150,7 @@ async def add_product(
     price: int = Form(...), 
     description: str = Form(None),
     category: str = Form(...),
+    is_in_stock: str = Form("true"),   # ← новое
     file: UploadFile = File(None),
     session: AsyncSession = Depends(get_db)
 ):
@@ -135,15 +161,18 @@ async def add_product(
         image_url = await save_optimized_image(file)
     
     product = Product(
-        title=title, price=price, description=description,
-        category=CategoryEnum(category), image_url=image_url
+        title=title, 
+        price=price, 
+        description=description,
+        category=CategoryEnum(category),
+        image_url=image_url,
+        is_in_stock=(is_in_stock.lower() == "true")  # ← новое
     )
     session.add(product)
     await session.commit()
     return RedirectResponse("/catalog", status_code=303)
 
-# Новый роут: GET для формы редактирования
-# 1. Эта функция исправляет ошибку 405 (открывает страницу редактирования)
+
 @app.get("/catalog/edit/{product_id}", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
@@ -151,10 +180,9 @@ async def edit_product_page(request: Request, product_id: int, session: AsyncSes
     product = await session.get(Product, product_id)
     if not product: raise HTTPException(status_code=404)
     
-    # Убедитесь, что у вас есть файл edit_product.html в папке шаблонов
     return templates.TemplateResponse("edit_product.html", {"request": request, "product": product})
 
-# 2. Эта функция сохраняет изменения и делает фото в формате WebP
+
 @app.post("/catalog/edit/{product_id}")
 async def edit_product_save(
     request: Request, 
@@ -163,7 +191,8 @@ async def edit_product_save(
     price: int = Form(...), 
     description: str = Form(None),
     category: str = Form(...),
-    file: UploadFile = File(None), # Здесь стоит None по умолчанию
+    is_in_stock: str = Form("true"),   # ← новое
+    file: UploadFile = File(None),
     session: AsyncSession = Depends(get_db)
 ):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")
@@ -171,30 +200,21 @@ async def edit_product_save(
     product = await session.get(Product, product_id)
     if not product: raise HTTPException(status_code=404)
     
-    # Обновляем текстовые поля (они обновятся в любом случае)
     product.title = title
     product.price = price
     product.description = description
     product.category = CategoryEnum(category)
+    product.is_in_stock = (is_in_stock.lower() == "true")  # ← новое
     
-    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем, загружен ли новый файл
-    # Если файл не выбран, браузер пришлет пустой объект UploadFile с пустым именем
     if file and file.filename:
-        # 1. Удаляем старое физически с диска (если оно было)
         if product.image_url:
             old_path = product.image_url.lstrip('/')
             if os.path.exists(old_path):
                 os.remove(old_path)
-        
-        # 2. Сохраняем новое фото в WebP
         product.image_url = await save_optimized_image(file)
-    
-    # Если файл не прислали (file.filename пустой), 
-    # product.image_url останется прежним, каким и был в базе.
 
     await session.commit()
     return RedirectResponse("/catalog", status_code=303)
-
 @app.post("/catalog/delete/{product_id}")
 async def delete_product(request: Request, product_id: int, session: AsyncSession = Depends(get_db)):
     if not request.session.get("is_logged_in"): return RedirectResponse("/")

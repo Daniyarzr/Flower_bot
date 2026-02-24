@@ -44,13 +44,15 @@ def kb_price_filters(category: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def kb_product_nav(category: str, price_data: str, index: int, total: int, product_id: int) -> InlineKeyboardMarkup:
+def kb_product_nav(category: str, price_data: str, index: int, total: int, product_id: int, is_in_stock: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
-    builder.button(text="✅ Оформить заказ", callback_data=f"req:start:{product_id}")
+    if is_in_stock:
+        builder.button(text="✅ Оформить заказ", callback_data=f"req:start:{product_id}")
+    else:
+        builder.button(text="❌ Нет в наличии", callback_data=f"unavail:{product_id}")
     
     # Навигация
-    # nav:category:price_range:current_index
     prev_idx = max(0, index - 1)
     next_idx = min(total - 1, index + 1)
     

@@ -90,7 +90,10 @@ async def get_products_cached(category: str, min_p: int, max_p: int) -> List[Pro
                 Product.price >= min_p,
                 Product.price <= max_p,
             )
-            .order_by(Product.id.desc())
+            .order_by(
+                Product.is_in_stock.desc(),
+                Product.id.desc()
+            )
         )
         products = result.scalars().all()
 
@@ -241,7 +244,7 @@ async def show_product(c: CallbackQuery, category: str, min_p: int, max_p: int, 
         f"{product.description or 'Описание скоро появится'}\n\n"
         f"💰 Цена: <b>{product.price} ₽</b>"
     )
-    markup = kb_product_nav(category, price_data, index, len(products), product.id)
+    markup = kb_product_nav(category, price_data, index, len(products), product.id, product.is_in_stock)
 
     photo = None
     if product.photo_file_id:
@@ -552,6 +555,15 @@ async def req_cancel(c: CallbackQuery, state: FSMContext):
     await c.answer("❌ Заявка отменена")
     logger.info(f"Req cancel handler done in {time_func() - start_time} s")
 
+@router.callback_query(F.data.startswith("unavail:"))
+async def product_unavailable(c: CallbackQuery):
+    await c.answer(
+        "❌ Товар временно отсутствует в наличии.\n\n"
+        "Мы работаем над пополнением ассортимента! 🌸\n"
+        "Попробуйте позже или посмотрите другие букеты.",
+        show_alert=True
+    )
+    
 # Fallback for not handled messages
 @router.message()
 async def fallback(m: Message):
